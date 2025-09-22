@@ -2,7 +2,7 @@
 
 ![Project Banner](https://img.shields.io/badge/Status-In_Development-orange)  
 ![Language](https://img.shields.io/badge/Language-Python-blue)  
-![Framework](https://img.shields.io/badge/Framework-YOLOv8-red)
+![Framework](https://img.shields.io/badge/Framework-YOLO-red)
 
 ---
 
@@ -30,7 +30,7 @@ The main goal is to explore methods that could be applied in robotics, autonomou
 
 ## Features
 
-- Real-time human figure detection using YOLOv8  
+- Real-time human figure detection using YOLO  
 - PID-controlled tracking mechanism for smooth target following  
 - Robust image processing for varied lighting and backgrounds  
 - Safe, simulation-based demonstrations using recorded gameplay  
@@ -61,7 +61,7 @@ The main goal is to explore methods that could be applied in robotics, autonomou
 
 - **Programming Language:** Python  
 - **Computer Vision Library:** OpenCV  
-- **Deep Learning Framework:** PyTorch, YOLOv8  
+- **Deep Learning Framework:** PyTorch, YOLO  
 - **Hardware Requirements:** Standard PC with GPU support (NVIDIA CUDA-enabled recommended)  
 - **Operating System:** Windows 10/11  
 
