@@ -6,7 +6,7 @@ import keyboard
 from datetime import datetime
 
 # 设置固定的保存路径
-save_dir = "data/train/images"
+save_dir = "data/images/test"
 os.makedirs(save_dir, exist_ok=True)  # 如果文件夹不存在，则创建
 
 print(f"截图将保存到：{save_dir}")
@@ -49,11 +49,19 @@ while True:
         filename = os.path.join(save_dir, f"screenshot_{timestamp}.png")
 
         if choice == -1:
-            screenshot = pyautogui.screenshot()
+            # 获取屏幕大小
+            screen_width, screen_height = pyautogui.size()
+            x = (screen_width - 640) // 2
+            y = (screen_height - 640) // 2
+            screenshot = pyautogui.screenshot(region=(x, y, 640, 640))
         else:
             window = gw.getWindowsWithTitle(all_windows[choice])[0]
             x, y, width, height = window.left, window.top, window.width, window.height
-            screenshot = pyautogui.screenshot(region=(x, y, width, height))
+
+            # 计算窗口中间区域
+            cx = x + (width - 640) // 2
+            cy = y + (height - 640) // 2
+            screenshot = pyautogui.screenshot(region=(cx, cy, 640, 640))
 
         screenshot.save(filename)
         print(f"截图已保存：{filename}")
