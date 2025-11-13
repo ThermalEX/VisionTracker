@@ -1,3 +1,6 @@
+# 使用卡尔曼滤波器和指数移动平均（EMA）算法对 YOLO 检测到的人头位置进行平滑追踪。
+# use multiprocessing + kalman filter + EMA for YOLO head tracking
+
 import multiprocessing as mp
 import cv2
 import numpy as np
