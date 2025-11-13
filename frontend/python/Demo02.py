@@ -45,8 +45,8 @@ def capture_thread(frame_queue,
             frame = cv2.cvtColor(frame,
                                  cv2.COLOR_RGB2BGR)
 
-            #关键的队列操作
-            # 我们希望队列中 *只* 保留最新的一帧
+            # 关键的队列操作
+            # 队列中只保留最新的一帧
             # 1. 尝试清空队列（如果里面有旧帧）
             try:
                 frame_queue.get_nowait()
@@ -67,8 +67,7 @@ def capture_thread(frame_queue,
                 running_event.clear()  # 通知主线程也退出
                 break
 
-        # 稍微暂停，避免 CPU 占用率 100%
-        # 你可以根据需要调整这个值，甚至移除它
+        # 稍微暂停，避免CPU占用率过高
         time.sleep(0.001)
 
     # 2. 消费者：主线程设置
@@ -129,7 +128,7 @@ capture_worker.start()
 print("捕获线程已启动...")
 
 # 4. 主线程（消费者）循环
-# 主线程现在只负责 "获取帧"、"推理" 和 "显示"
+# 主线程现在只负责获取帧、推理和显示
 
 while running_event.is_set():  # 循环直到 'q' 被按下或捕获线程出错
     try:
@@ -144,7 +143,7 @@ while running_event.is_set():  # 循环直到 'q' 被按下或捕获线程出错
         continue
 
     # 开始推理
-    # (此时，捕获线程可能已经在抓取 *下一* 帧了)
+    # 此时，捕获线程可能已经在抓取下一帧了
     results = model(frame)
 
     # 获取推理结果并渲染边界框
