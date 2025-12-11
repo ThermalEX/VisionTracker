@@ -51,7 +51,7 @@ def yolo_process(frame_queue, result_queue, running):
     import torch
     from ultralytics import YOLO
 
-    model = YOLO("best.pt")
+    model = YOLO("best 12.10.pt")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(f"[YOLO] 使用设备: {device}")

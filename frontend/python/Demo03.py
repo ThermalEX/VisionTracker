@@ -57,7 +57,7 @@ def capture_process(frame_queue, running_event, choice, all_windows):
 def inference_process(frame_queue, running_event):
     # 主进程：YOLO 推理 + Kalman 滤波 + 显示
     print("正在加载 YOLO 模型...")
-    model = YOLO("best.pt")
+    model = YOLO("best 12.10.pt")
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
     model.to(device)
     print(f"使用设备: {device}")

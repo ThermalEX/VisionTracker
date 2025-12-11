@@ -52,7 +52,7 @@ class CheckpointManager:
 
         # 保存最佳模型
         if is_best:
-            best_path = self.save_dir / 'best.pt'
+            best_path = self.save_dir / 'best 12.10.pt'
             torch.save(checkpoint, best_path)
             print(f"保存最佳模型: {best_path} (mAP: {metrics.get('mAP50', 0):.4f})")
             self.best_map = metrics.get('mAP50', 0)

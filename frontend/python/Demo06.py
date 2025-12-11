@@ -152,9 +152,10 @@ if __name__ == '__main__':
         except ValueError:
             pass
 
-    model = YOLO("best.pt")
+    model = YOLO("best 12.11.pt")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
+    model.fuse()
 
     if device.type == 'cuda':
         model.half()

@@ -158,7 +158,7 @@ if __name__ == '__main__':
             pass
 
     # 加载YOLO模型
-    model = YOLO("best.pt")
+    model = YOLO("best 12.10.pt")
     device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
     model.to(device)
     model.fuse()
