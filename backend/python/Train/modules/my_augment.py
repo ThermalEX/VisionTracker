@@ -370,7 +370,7 @@ def create_augment_pipeline(config):
 
 if __name__ == '__main__':
     # 测试数据增强
-    from config import TrainConfig
+    from config import TrainConfig  # type: ignore
 
     # 创建测试图像和标签
     test_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)

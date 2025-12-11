@@ -213,7 +213,7 @@ def train_model(config):
 
 if __name__ == '__main__':
     # 测试训练器
-    from config import TrainConfig
+    from config import TrainConfig   # type: ignore
 
     print("="*70)
     print("训练器测试")

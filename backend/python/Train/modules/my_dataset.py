@@ -257,8 +257,11 @@ def load_dataset_config(yaml_path: str):
 
 if __name__ == '__main__':
     # 测试数据集加载
-    from config import TrainConfig
-    from my_augment import create_augment_pipeline
+    import sys
+    from pathlib import Path
+    sys.path.append(str(Path(__file__).parent.parent))
+    from config import TrainConfig  # type: ignore
+    from modules.my_augment import create_augment_pipeline  # type: ignore
 
     # 加载配置
     config = TrainConfig()
