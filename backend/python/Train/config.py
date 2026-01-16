@@ -17,7 +17,7 @@ class TrainConfig:
     img_size = 640
 
     # 批次大小（根据显存调整）
-    batch_size = 32
+    batch_size = 8
 
     # 数据加载线程数
     num_workers = 4
@@ -30,7 +30,7 @@ class TrainConfig:
 
     # ========== 训练相关 ==========
     # 训练轮数
-    epochs = 50
+    epochs = 1000
 
     # 初始学习率
     learning_rate = 0.01
@@ -42,7 +42,7 @@ class TrainConfig:
     momentum = 0.937
 
     # 预训练模型路径（用于迁移学习）
-    pretrained_weights = "yolo11n.pt"
+    pretrained_weights = "yolo11m.pt"
 
     # ========== 数据增强开关 ==========
     # 分辨率降低增强
@@ -114,7 +114,7 @@ class TrainConfig:
     # 实验名称
     exp_name = "exp"
 
-    # 是否覆盖已有实验
+    # 是否覆盖已有实验（True: 每次覆盖同一目录, False: 自动递增编号）
     exist_ok = False
 
     # 每N个epoch保存一次检查点
@@ -174,31 +174,38 @@ class TrainConfig:
 
     def print_config(self):
         """打印配置信息"""
-        print("="*60)
-        print("训练配置")
-        print("="*60)
-        print(f"数据集: {self.data_yaml}")
-        print(f"图像大小: {self.img_size}x{self.img_size}")
-        print(f"批次大小: {self.batch_size} (梯度累积: {self.accumulate_grad}步)")
-        print(f"训练轮数: {self.epochs}")
-        print(f"初始学习率: {self.learning_rate}")
-        print(f"类别数: {self.num_classes}")
-        print(f"类别名称: {self.class_names}")
-        print(f"")
-        print(f"数据增强:")
-        print(f"  - 分辨率降低: {self.use_resolution_reduce}")
-        print(f"  - 色彩增强: {self.use_color_jitter}")
-        print(f"  - 几何变换: {self.use_geometric}")
-        print(f"  - 噪声模糊: {self.use_noise_blur}")
-        print(f"  - Mosaic: {self.use_mosaic}")
-        print(f"")
-        print(f"性能优化:")
-        print(f"  - 混合精度(AMP): {self.use_amp}")
-        print(f"  - 图像缓存: {self.cache_images}")
-        print(f"  - 固定内存: {self.pin_memory}")
-        print(f"")
-        print(f"保存目录: {self.exp_dir}")
-        print("="*60)
+        print("\n" + "="*70)
+        print(" "*25 + "Training Configuration")
+        print("="*70)
+
+        # 基本配置
+        print(f"Dataset          : {self.data_yaml}")
+        print(f"Image Size       : {self.img_size}x{self.img_size}")
+        print(f"Batch Size       : {self.batch_size} (grad accumulation: {self.accumulate_grad})")
+        print(f"Epochs           : {self.epochs}")
+        print(f"Learning Rate    : {self.learning_rate}")
+        print(f"Classes          : {self.num_classes} {self.class_names}")
+
+        # 数据增强
+        aug_list = []
+        if self.use_resolution_reduce: aug_list.append("Resolution")
+        if self.use_color_jitter: aug_list.append("Color")
+        if self.use_geometric: aug_list.append("Geometric")
+        if self.use_noise_blur: aug_list.append("Noise/Blur")
+        if self.use_mosaic: aug_list.append("Mosaic")
+        print(f"Augmentation     : {', '.join(aug_list) if aug_list else 'None'}")
+
+        # 性能优化
+        opt_list = []
+        if self.use_amp: opt_list.append("AMP")
+        if self.cache_images: opt_list.append("Cache")
+        if self.pin_memory: opt_list.append("PinMemory")
+        print(f"Optimization     : {', '.join(opt_list) if opt_list else 'None'}")
+
+        # 统一路径斜杠方向
+        normalized_path = self.exp_dir.replace('\\', '/')
+        print(f"Save Directory   : {normalized_path}")
+        print("="*70 + "\n")
 
 
 # 创建默认配置实例

@@ -259,9 +259,14 @@ if __name__ == '__main__':
     # 测试数据集加载
     import sys
     from pathlib import Path
-    sys.path.append(str(Path(__file__).parent.parent))
-    from config import TrainConfig  # type: ignore
-    from modules.my_augment import create_augment_pipeline  # type: ignore
+
+    # 添加父目录到路径
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+
+    from config import TrainConfig
+    from modules.my_augment import create_augment_pipeline
 
     # 加载配置
     config = TrainConfig()

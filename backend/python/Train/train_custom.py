@@ -1,15 +1,3 @@
-"""
-自定义YOLO训练脚本
-主入口文件
-
-使用方法:
-    python train_custom.py
-
-说明:
-    这是一个简化的YOLO训练实现,适合初学者理解训练流程
-    基于ultralytics YOLO,但添加了详细注释和自定义配置
-"""
-import os
 import sys
 import argparse
 from pathlib import Path
@@ -62,15 +50,15 @@ def main():
     """主函数"""
 
     print("\n" + "="*70)
-    print("   自定义YOLO训练程序")
-    print("   基于ultralytics YOLO11")
-    print("="*70 + "\n")
+    print(" "*22 + "Custom YOLO Training Program")
+    print(" "*26 + "Based on YOLO11")
+    print("="*70)
 
     # 1. 解析命令行参数
     args = parse_args()
 
     # 2. 加载配置
-    print("加载配置...")
+    print("\nLoading configuration...")
     config = TrainConfig()
 
     # 3. 应用命令行参数覆盖
@@ -90,98 +78,64 @@ def main():
         config.use_geometric = False
         config.use_noise_blur = False
         config.use_mosaic = False
-        print("已禁用所有数据增强")
+        print("  All augmentation disabled")
 
     if args.no_mosaic:
         config.use_mosaic = False
-        print("已禁用Mosaic增强")
+        print("  Mosaic augmentation disabled")
 
     # 性能优化开关
     if args.no_amp:
         config.use_amp = False
-        print("已禁用混合精度训练")
+        print("  AMP disabled")
 
     if args.no_cache:
         config.cache_images = False
-        print("已禁用图像缓存")
+        print("  Image cache disabled")
 
     # 4. 检查数据集是否存在
-    print("\n检查数据集...")
+    print("\nChecking dataset...")
     data_yaml = Path(config.data_yaml)
     if not data_yaml.exists():
-        print(f"错误: 数据集配置文件不存在: {data_yaml}")
-        print(f"请确保文件路径正确")
+        print(f"Error: Dataset config not found: {data_yaml}")
         sys.exit(1)
-
-    print(f"数据集配置: {data_yaml}")
+    print(f"  Dataset config: {data_yaml}")
 
     # 5. 检查预训练权重
-    print("\n检查预训练权重...")
+    print("\nChecking pretrained weights...")
     if config.pretrained_weights:
         weights_path = Path(config.pretrained_weights)
         if not weights_path.exists():
-            print(f"警告: 预训练权重不存在: {weights_path}")
-            print(f"将尝试自动下载 yolo11n.pt")
+            print(f"  Warning: Weights not found, will try to download yolo11n.pt")
         else:
-            print(f"预训练权重: {weights_path}")
+            print(f"  Pretrained weights: {weights_path}")
     else:
-        print("不使用预训练权重（从头训练）")
+        print("  Training from scratch (no pretrained weights)")
 
-    # 6. 打印训练配置摘要
-    print("\n" + "-"*70)
-    print("训练配置摘要:")
-    print("-"*70)
-    print(f"训练轮数: {config.epochs}")
-    print(f"批次大小: {config.batch_size}")
-    print(f"图像大小: {config.img_size}")
-    print(f"学习率: {config.learning_rate}")
-    print(f"工作线程: {config.num_workers}")
-    print(f"")
-    print(f"数据增强:")
-    print(f"  分辨率降低: {config.use_resolution_reduce}")
-    print(f"  色彩增强: {config.use_color_jitter}")
-    print(f"  几何变换: {config.use_geometric}")
-    print(f"  噪声模糊: {config.use_noise_blur}")
-    print(f"  Mosaic: {config.use_mosaic}")
-    print(f"")
-    print(f"性能优化:")
-    print(f"  混合精度(AMP): {config.use_amp}")
-    print(f"  图像缓存: {config.cache_images}")
-    print(f"  梯度累积: {config.accumulate_grad}步")
-    print(f"")
-    print(f"保存目录: {config.exp_dir}")
-    print("-"*70 + "\n")
-
-    # 7. 确认开始训练
-    print("确认以上配置无误后，训练将自动开始...")
-    print("按 Ctrl+C 可以中断训练\n")
+    # 6. 确认开始训练
+    print("\nPress Ctrl+C to interrupt training\n")
 
     # 8. 开始训练
     try:
         results = train_model(config)
 
         # 9. 训练完成
+        normalized_path = config.exp_dir.replace('\\', '/')
         print("\n" + "="*70)
-        print("训练成功完成！")
+        print(" "*25 + "Training Successful!")
         print("="*70)
-        print(f"\n模型和日志保存在: {config.exp_dir}")
-        print(f"")
-        print(f"使用训练好的模型进行推理:")
-        print(f"  python Demo05.py  # 或其他Demo脚本")
-        print(f"")
-        print(f"查看TensorBoard日志:")
-        print(f"  tensorboard --logdir {Path(config.exp_dir).parent}")
+        print(f"\nModel saved      : {normalized_path}/weights/best.pt")
+        print(f"TensorBoard      : tensorboard --logdir {Path(config.exp_dir).parent}")
         print("="*70 + "\n")
 
         return 0
 
     except KeyboardInterrupt:
-        print("\n\n训练被用户中断")
+        print("\n\nTraining interrupted by user")
         return 1
 
     except Exception as e:
-        print(f"\n\n训练过程中发生错误:")
-        print(f"  {str(e)}")
+        print(f"\n\nTraining error: {str(e)}")
         import traceback
         traceback.print_exc()
         return 1

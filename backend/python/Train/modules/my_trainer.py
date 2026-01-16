@@ -5,15 +5,28 @@
 import torch
 import time
 from pathlib import Path
-from .my_model import create_model
-from .my_dataset import load_dataset_config
-from .my_utils import (
-    CheckpointManager,
-    TensorBoardLogger,
-    EarlyStopping,
-    MetricsTracker,
-    print_training_progress
-)
+
+# 支持相对导入和直接运行
+try:
+    from .my_model import create_model
+    from .my_dataset import load_dataset_config
+    from .my_utils import (
+        CheckpointManager,
+        TensorBoardLogger,
+        EarlyStopping,
+        MetricsTracker,
+        print_training_progress
+    )
+except ImportError:
+    from my_model import create_model
+    from my_dataset import load_dataset_config
+    from my_utils import (
+        CheckpointManager,
+        TensorBoardLogger,
+        EarlyStopping,
+        MetricsTracker,
+        print_training_progress
+    )
 
 
 class YOLOTrainer:
@@ -32,10 +45,10 @@ class YOLOTrainer:
 
         # 设备
         self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
-        print(f"使用设备: {self.device}")
+        print(f"Device           : {self.device}")
 
         # 创建模型
-        print("\n创建模型...")
+        print("Model            : Creating...")
         self.model = create_model(
             num_classes=config.num_classes,
             pretrained=config.pretrained_weights
@@ -45,7 +58,7 @@ class YOLOTrainer:
         self.model = self.model.to(self.device)
 
         # 加载数据集配置
-        print("\n加载数据集配置...")
+        print("Dataset Config   : Loading...")
         self.dataset_config = load_dataset_config(config.data_yaml)
 
         # 初始化工具
@@ -69,22 +82,17 @@ class YOLOTrainer:
         self.start_epoch = 0
         self.best_map = 0.0
 
-        print("\n训练器初始化完成！")
+        print("Trainer          : Ready\n")
 
     def train(self):
         """
         开始训练
         使用ultralytics的训练功能，但添加自定义的管理
         """
-        print("\n" + "="*70)
-        print("开始训练")
-        print("="*70)
-
         # 打印配置
         self.cfg.print_config()
 
         # 使用ultralytics的训练接口
-        # 这样可以利用其优化的训练循环、损失函数和指标计算
         try:
             # 配置训练参数
             train_args = {
@@ -117,8 +125,8 @@ class YOLOTrainer:
 
                 # 保存和日志
                 'project': self.cfg.save_dir,
-                'name': Path(self.cfg.exp_dir).name,  # 使用已生成的具体实验目录名（如exp1）
-                'exist_ok': True,                     # 允许使用已存在的目录（因为我们刚创建了它）
+                'name': Path(self.cfg.exp_dir).name,
+                'exist_ok': True,
                 'save_period': self.cfg.save_period,
                 'patience': self.cfg.patience,
 
@@ -132,9 +140,7 @@ class YOLOTrainer:
             start_time = time.time()
 
             # 调用ultralytics的训练方法
-            print("\n开始训练...")
-            print("注意: 使用ultralytics内置训练流程")
-            print("     训练日志将由ultralytics管理\n")
+            print("Starting training with ultralytics...\n")
 
             results = self.model.yolo.train(**train_args)
 
@@ -144,17 +150,19 @@ class YOLOTrainer:
             minutes = int((total_time % 3600) // 60)
             seconds = int(total_time % 60)
 
+            normalized_path = self.cfg.exp_dir.replace('\\', '/')
+
             print("\n" + "="*70)
-            print("训练完成！")
+            print(" "*27 + "Training Complete")
             print("="*70)
-            print(f"总用时: {hours:02d}:{minutes:02d}:{seconds:02d}")
-            print(f"模型保存在: {self.cfg.exp_dir}")
+            print(f"Total Time       : {hours:02d}:{minutes:02d}:{seconds:02d}")
+            print(f"Model Saved      : {normalized_path}")
             print("="*70 + "\n")
 
             return results
 
         except Exception as e:
-            print(f"\n训练过程中出错: {e}")
+            print(f"\nTraining error: {e}")
             import traceback
             traceback.print_exc()
             raise
@@ -165,7 +173,7 @@ class YOLOTrainer:
         Returns:
             metrics: 验证指标字典
         """
-        print("\n开始验证...")
+        print("\nValidating model...")
 
         try:
             # 使用ultralytics的验证功能
@@ -183,14 +191,14 @@ class YOLOTrainer:
                 'mAP50-95': metrics.box.map if hasattr(metrics, 'box') else 0.0,
             }
 
-            print(f"验证结果:")
-            print(f"  mAP50: {results['mAP50']:.4f}")
-            print(f"  mAP50-95: {results['mAP50-95']:.4f}")
+            print(f"\nValidation Results:")
+            print(f"  mAP50        : {results['mAP50']:.4f}")
+            print(f"  mAP50-95     : {results['mAP50-95']:.4f}")
 
             return results
 
         except Exception as e:
-            print(f"验证时出错: {e}")
+            print(f"\nValidation error: {e}")
             return {'mAP50': 0.0, 'mAP50-95': 0.0}
 
 
@@ -213,20 +221,28 @@ def train_model(config):
 
 if __name__ == '__main__':
     # 测试训练器
-    from config import TrainConfig   # type: ignore
+    import sys
+    from pathlib import Path
 
-    print("="*70)
-    print("训练器测试")
-    print("="*70)
+    # 添加父目录到路径以便导入 config
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+
+    from config import TrainConfig
+
+    print("\n" + "="*70)
+    print(" "*28 + "Trainer Test Mode")
+    print("="*70 + "\n")
 
     # 创建配置（使用较小的参数进行测试）
     config = TrainConfig()
-    config.epochs = 2  # 测试时只训练2个epoch
+    config.epochs = 2
     config.batch_size = 4
-    config.cache_images = False  # 测试时不缓存
+    config.cache_images = False
 
     # 创建训练器
     trainer = YOLOTrainer(config)
 
-    print("\n训练器创建成功！")
-    print("\n如需开始训练，请运行 train_custom.py")
+    print("Trainer created successfully!")
+    print("To start training, run train_custom.py\n")

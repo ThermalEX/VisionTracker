@@ -370,7 +370,15 @@ def create_augment_pipeline(config):
 
 if __name__ == '__main__':
     # 测试数据增强
-    from config import TrainConfig  # type: ignore
+    import sys
+    from pathlib import Path
+
+    # 添加父目录到路径
+    parent_dir = Path(__file__).parent.parent
+    if str(parent_dir) not in sys.path:
+        sys.path.insert(0, str(parent_dir))
+
+    from config import TrainConfig
 
     # 创建测试图像和标签
     test_image = np.random.randint(0, 255, (640, 640, 3), dtype=np.uint8)

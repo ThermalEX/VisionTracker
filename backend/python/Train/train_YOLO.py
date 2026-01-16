@@ -1,7 +1,10 @@
 from ultralytics import YOLO
-import os
 
 def main():
+    print("\n" + "="*70)
+    print(" "*27 + "YOLO Training Start")
+    print("="*70 + "\n")
+
     model = YOLO("yolo11n.pt")
 
     results = model.train(
@@ -16,13 +19,17 @@ def main():
         pretrained=True
     )
 
-    #训练完成后，自动加载 best.pt 模型并进行一次完整验证（可选但推荐）
-    print("✅ Beginning final verification with best.pt...")
+    # Final validation
+    print("\n" + "="*70)
+    print("Final Validation")
+    print("="*70)
     model = YOLO("runs/train_custom/exp/weights/best.pt")
     model.val()
 
     best_model_path = "runs/train_custom/exp/weights/best.pt"
-    print(f"✅ Training complete! Best model saved：{best_model_path}")
+    print("\n" + "="*70)
+    print(f"Training Complete! Best model: {best_model_path}")
+    print("="*70 + "\n")
 
 if __name__ == '__main__':
     main()
