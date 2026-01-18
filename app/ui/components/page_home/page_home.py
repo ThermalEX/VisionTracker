@@ -30,7 +30,7 @@ class HomePage(SiPage):
         self.background_image = SiPixLabel(self.head_area)
         self.background_image.setFixedSize(1366, 250)
         self.background_image.setBorderRadius(6)
-        background_path = os.path.join(img_dir, 'homepage_background.jpg')
+        background_path = os.path.join(img_dir, 'homepage_background.png')
         self.background_image.load(background_path)
 
         # Gradient fade transition
@@ -45,11 +45,12 @@ class HomePage(SiPage):
             )
         )
 
-        # Welcome text - "ThermalEX Welcome!" in one line
+        # Welcome text
+        self._username = "User"
         self.welcome_label = SiLabel(self.head_area)
         self.welcome_label.setGeometry(64, 50, 800, 80)
         self.welcome_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        self.welcome_label.setText("ThermalEX Welcome!")
+        self.welcome_label.setText(f"{self._username} Welcome!")
         self.welcome_label.setStyleSheet("color: #FFFFFF")
         # Use larger font size
         font = SiFont.tokenized(GlobalFont.XL_MEDIUM)
@@ -102,6 +103,11 @@ class HomePage(SiPage):
 
         # Set attachment
         self.setAttachment(self.scroll_container)
+
+    def setUsername(self, username: str):
+        """Set the username displayed in welcome message."""
+        self._username = username
+        self.welcome_label.setText(f"{self._username} Welcome!")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

@@ -189,7 +189,9 @@ class PageView(SiDenseHContainer):
         self.stacked_container.setStyleSheet(
             """
             #stacked_container {{
-                border-top-left-radius:6px; border-bottom-right-radius: 8px;
+                border-top-left-radius: 8px;
+                border-top-right-radius: 8px;
+                border-bottom-left-radius: 8px;
                 background-color: {}; border:1px solid {};
             }}
             """.format(SiGlobal.siui.colors["INTERFACE_BG_B"], SiGlobal.siui.colors["INTERFACE_BG_C"])
