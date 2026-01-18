@@ -1,0 +1,34 @@
+# Vision Tracker Dependencies
+#
+# Install: pip install -r requirements.txt
+#
+# Note: For CUDA support, first install PyTorch:
+#   pip install torch torchvision --index-url https://download.pytorch.org/whl/cu130
+#
+# SiliconUI is bundled in app/siui, no need to install separately.
+
+# UI Framework
+PyQt5>=5.15.10
+typing-extensions>=4.12.0
+python-dateutil>=2.9.0
+
+# Deep Learning
+ultralytics>=8.3.0
+torch>=2.0.0
+torchvision>=0.15.0
+
+# Computer Vision
+opencv-python>=4.8.0
+numpy>=1.24.0
+
+# Screen Capture
+mss>=9.0.0
+pyautogui>=0.9.54
+pygetwindow>=0.0.9
+
+# Input Control
+keyboard>=0.13.5
+pywin32>=306  # Windows only
+
+# Utilities
+pillow>=10.0.0

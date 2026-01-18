@@ -6,3 +6,8 @@
 __pycache__/
 *.pyc
 yolo11n.pt
+yolo11x.pt
+*.onnx
+/Literature_Review.md
+/Interim report.pdf
+/Wang Shuhan PDD.pdf
