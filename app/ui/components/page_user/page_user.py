@@ -569,7 +569,7 @@ class UserPage(SiPage):
             group.addWidget(self.profile_card)
 
             # Initial layout after a short delay
-            QTimer.singleShot(50, self._layoutProfileCard)
+            QTimer.singleShot(100, self._layoutProfileCard)
 
     def _layoutProfileCard(self):
         """Layout profile card elements."""
@@ -577,6 +577,11 @@ class UserPage(SiPage):
             return
         card_width = self.profile_card.width()
         card_height = self.profile_card.height()
+
+        # Retry if card width is not ready yet
+        if card_width < 200:
+            QTimer.singleShot(50, self._layoutProfileCard)
+            return
 
         # Avatar: left side, vertically centered
         avatar_x = 20

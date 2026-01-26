@@ -2,17 +2,22 @@
 
 import os
 import sys
-from PyQt5.QtCore import QTimer
+from PyQt5.QtCore import QTimer, QSettings
 from PyQt5.QtGui import QIcon
 from PyQt5.QtWidgets import QDesktopWidget
 
 import siui
-from siui.core import SiColor, SiGlobal
+from siui.core import SiColor, SiGlobal, GlobalFont, Si
+from siui.gui import SiFont
+from siui.components import SiLabel
+from siui.components.button import SiPushButtonRefactor as SiPushButton
+from siui.components.widgets.button import SiCheckBox
 from siui.templates.application.application import SiliconApplication
 from siui.templates.application.components.layer.layer_login import LayerLogin
+from siui.templates.application.components.layer.layer_right_message_sidebar.messagebox import SiSideMessageBox
 
 from . import icons
-from .components import HomePage, AboutPage, UserPage
+from .components import HomePage, AboutPage, UserPage, ConfigPage
 
 from auth import DatabaseManager, SessionManager, EmailService
 from auth.config import AuthConfig
@@ -48,17 +53,18 @@ class VisionTrackerApp(SiliconApplication):
         # Window setup
         screen_geo = QDesktopWidget().screenGeometry()
         self.setMinimumSize(1024, 600)
-        self.resize(1200, 800)
+        self.resize(1200, 725)
         self.move((screen_geo.width() - self.width()) // 2, (screen_geo.height() - self.height()) // 2)
 
-        # Title
+        # Title and icon
         self.layerMain().setTitle("Vision Tracker")
         self.setWindowTitle("Vision Tracker")
 
-        # Set window icon if exists
-        icon_path = os.path.join(current_dir, "..", "icon.ico")
+        # Set window icon and title bar icon
+        icon_path = os.path.join(current_dir, "img", "app_icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
+            self.layerMain().setAppIcon(icon_path)
 
         # Add pages
         # Home page - top
@@ -67,6 +73,15 @@ class VisionTrackerApp(SiliconApplication):
             self.home_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_home_filled"),
             hint="Home",
+            side="top"
+        )
+
+        # Config page - top
+        self.config_page = ConfigPage(self)
+        self.layerMain().addPage(
+            self.config_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_edit_settings_regular"),
+            hint="Configuration",
             side="top"
         )
 
@@ -134,15 +149,120 @@ class VisionTrackerApp(SiliconApplication):
             self.current_user = user
             self.home_page.setUsername(user.username)
             self.user_page.setUser(user)
+            # Flag to show notifications after window is visible
+            self._auto_login_user = user
         else:
             # Delay showing login layer until window is fully rendered
             self._need_login = True
+            self._auto_login_user = None
 
     def _onLoginSuccess(self, user):
         """Handle successful login."""
         self.current_user = user
         self.home_page.setUsername(user.username)
         self.user_page.setUser(user)
+
+        # Reset "don't show again" setting on fresh login
+        settings = QSettings("VisionTracker", "App")
+        settings.setValue("hide_help_notification", False)
+
+        # Send notifications
+        self._sendLoginNotifications(user)
+
+    def _sendLoginNotifications(self, user):
+        """Send login success and help notifications."""
+        # Send login success notification
+        self.LayerRightMessageSidebar().send(
+            title="Login Successful",
+            text=f"Welcome back, {user.username}!",
+            msg_type=1,  # SUCCESS (green)
+            fold_after=3000
+        )
+
+        # Check if user wants to hide help notification
+        settings = QSettings("VisionTracker", "App")
+        if not settings.value("hide_help_notification", False, type=bool):
+            self._sendHelpNotification()
+
+    def _sendHelpNotification(self):
+        """Send help notification with a button to navigate to About page."""
+        sidebar = self.LayerRightMessageSidebar()
+
+        # Create custom message box
+        msg_box = SiSideMessageBox(sidebar)
+        msg_box.setMessageType(1)  # SUCCESS (green)
+        msg_box.setFixedWidth(sidebar.width() - 20)
+
+        container = msg_box.content().container()
+        container.setSpacing(0)
+
+        # Title label
+        title_label = SiLabel(sidebar)
+        title_label.setFixedWidth(380 - msg_box.content().theme_wing_width - 32)
+        title_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        title_label.setWordWrap(True)
+        title_label.setFont(SiFont.tokenized(GlobalFont.S_BOLD))
+        title_label.setFixedStyleSheet(
+            "padding-top: 16px;"
+            "padding-bottom: 1px;"
+            "padding-left: 12px;"
+            "padding-right: 12px;"
+            f"color: {sidebar.getColor(SiColor.TEXT_B)}"
+        )
+        title_label.setText("Getting Started")
+
+        # Description label
+        desc_label = SiLabel(sidebar)
+        desc_label.setFixedWidth(380 - msg_box.content().theme_wing_width - 32)
+        desc_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        desc_label.setWordWrap(True)
+        desc_label.setFont(SiFont.tokenized(GlobalFont.S_NORMAL))
+        desc_label.setFixedStyleSheet(
+            "padding-top: 1px;"
+            "padding-bottom: 8px;"
+            "padding-left: 12px;"
+            "padding-right: 12px;"
+            f"color: {sidebar.getColor(SiColor.TEXT_D)}"
+        )
+        desc_label.setText("Check out the About page to learn more.")
+
+        # Button row container (for checkbox and button)
+        btn_row = SiLabel(sidebar)
+        content_width = 380 - msg_box.content().theme_wing_width - 32
+        btn_row.setFixedSize(content_width, 32)
+
+        # "Don't show again" checkbox
+        dont_show_checkbox = SiCheckBox(btn_row)
+        dont_show_checkbox.setText("Don't show again")
+        dont_show_checkbox.text_label.setStyleSheet("color: #FFFFFF")
+        dont_show_checkbox.adjustSize()
+        dont_show_checkbox.move(12, (32 - dont_show_checkbox.height()) // 2)
+
+        # Save preference when checkbox is toggled
+        def on_checkbox_toggled(checked):
+            settings = QSettings("VisionTracker", "App")
+            settings.setValue("hide_help_notification", checked)
+
+        dont_show_checkbox.toggled.connect(on_checkbox_toggled)
+
+        # Button to navigate to About page
+        about_btn = SiPushButton(btn_row)
+        about_btn.setFixedSize(120, 32)
+        about_btn.setText("View About")
+        about_btn.clicked.connect(lambda: self.layerMain().setPage(2))
+        about_btn.clicked.connect(msg_box.closeLater)
+        # Position button on the right side
+        about_btn.move(content_width - 120 - 24, 0)
+
+        container.addWidget(title_label)
+        container.addWidget(desc_label)
+        container.addPlaceholder(4)
+        container.addWidget(btn_row)
+        container.addPlaceholder(12)
+
+        msg_box.setFoldAfter(8000)
+        msg_box.adjustSize()
+        sidebar.sendMessageBox(msg_box)
 
     def _onUsernameChanged(self, new_username: str):
         """Handle username change from user page."""
@@ -171,6 +291,11 @@ class VisionTrackerApp(SiliconApplication):
         if hasattr(self, '_need_login') and self._need_login:
             self._need_login = False
             QTimer.singleShot(100, self.layer_login.showLayer)
+        # Show notifications for auto-login
+        elif hasattr(self, '_auto_login_user') and self._auto_login_user:
+            user = self._auto_login_user
+            self._auto_login_user = None
+            QTimer.singleShot(300, lambda: self._sendLoginNotifications(user))
 
     def resizeEvent(self, event):
         """Handle window resize."""

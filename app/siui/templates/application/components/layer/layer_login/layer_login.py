@@ -60,6 +60,8 @@ class LayerLogin(SiLayer):
         self.overlay.raise_()
         self.panel_container.raise_()
         self._centerCurrentPanel()
+        # Clear inputs when showing login layer (e.g. after logout)
+        self.login_panel.clearInputs()
 
     def showLoginPanel(self):
         """Show login panel with animation."""

@@ -2,10 +2,11 @@
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont, QColor
-from PyQt5.QtWidgets import QLineEdit, QCheckBox, QGraphicsDropShadowEffect
+from PyQt5.QtWidgets import QLineEdit, QGraphicsDropShadowEffect
 
 from siui.components.widgets.abstracts.widget import SiWidget
 from siui.components.widgets.label import SiLabel
+from siui.components.widgets.button import SiCheckBox
 from siui.components.button import SiPushButtonRefactor as SiPushButton
 from siui.components.editbox import SiCapsuleLineEdit
 from siui.gui import SiFont
@@ -78,39 +79,23 @@ class LoginPanel(SiWidget):
         self.password_edit.style_data.text_indicator_color_editing = QColor("#00000000")
 
         # Remember me checkbox
-        self.remember_checkbox = QCheckBox("Remember me", self)
-        self.remember_checkbox.setFont(SiFont.getFont(size=13))
-        self.remember_checkbox.move(40, 260)
-        self.remember_checkbox.setStyleSheet("""
-            QCheckBox {
-                color: #918497;
-            }
-            QCheckBox::indicator {
-                width: 18px;
-                height: 18px;
-                border-radius: 4px;
-                border: 2px solid #555;
-                background: transparent;
-            }
-            QCheckBox::indicator:checked {
-                background: #D087DF;
-                border-color: #D087DF;
-                image: url(data:image/svg+xml;base64,PHN2ZyB4bWxucz0iaHR0cDovL3d3dy53My5vcmcvMjAwMC9zdmciIHdpZHRoPSIxNCIgaGVpZ2h0PSIxNCIgdmlld0JveD0iMCAwIDI0IDI0IiBmaWxsPSJub25lIiBzdHJva2U9IndoaXRlIiBzdHJva2Utd2lkdGg9IjMiIHN0cm9rZS1saW5lY2FwPSJyb3VuZCIgc3Ryb2tlLWxpbmVqb2luPSJyb3VuZCI+PHBvbHlsaW5lIHBvaW50cz0iMjAgNiA5IDE3IDQgMTIiPjwvcG9seWxpbmU+PC9zdmc+);
-            }
-        """)
+        self.remember_checkbox = SiCheckBox(self)
+        self.remember_checkbox.setText("Keep me logged in")
+        self.remember_checkbox.adjustSize()
+        self.remember_checkbox.move(40, 255)
 
         # Error message label
         self.error_label = SiLabel(self)
         self.error_label.setFont(SiFont.getFont(size=12))
         self.error_label.setTextColor("#FF6B6B")
         self.error_label.setFixedWidth(320)
-        self.error_label.move(40, 290)
+        self.error_label.move(40, 285)
         self.error_label.hide()
 
         # Login button
         self.login_button = SiPushButton(self)
         self.login_button.setFixedSize(320, 44)
-        self.login_button.move(40, 320)
+        self.login_button.move(40, 315)
         self.login_button.setText("Sign In")
         self.login_button.setFont(SiFont.getFont(size=15, weight=QFont.Bold))
 
@@ -120,7 +105,7 @@ class LoginPanel(SiWidget):
         self.register_link.setText("Don't have an account? <a href='#' style='color: #D087DF;'>Sign up</a>")
         self.register_link.setTextColor("#918497")
         self.register_link.adjustSize()
-        self.register_link.move((self.width() - self.register_link.width()) // 2, 380)
+        self.register_link.move((self.width() - self.register_link.width()) // 2, 375)
         self.register_link.setCursor(Qt.PointingHandCursor)
 
     def _initStyle(self):

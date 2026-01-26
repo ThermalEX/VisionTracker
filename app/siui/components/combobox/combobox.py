@@ -1,3 +1,10 @@
+"""
+SiComboBox - ComboBox component
+
+Fix History:
+- 2024: Fixed border visibility issue where internal container and unfold_menu_button
+  were covering the 1px border. Added 2px margin in resizeEvent to ensure border is visible.
+"""
 
 from PyQt5.QtCore import QPoint, Qt, pyqtSignal
 
@@ -80,7 +87,8 @@ class ABCSiComboBox(SiWidget):
     def resizeEvent(self, event):
         super().resizeEvent(event)
         self.panel_label.resize(event.size())
-        self.container_.resize(event.size())
+        # Leave 2px margin for border visibility (fix: internal elements were covering the border)
+        self.container_.setGeometry(2, 2, event.size().width() - 4, event.size().height() - 4)
         self.menu_.setContentFixedWidth(event.size().width())
 
 
@@ -126,4 +134,5 @@ class SiComboBox(ABCSiComboBox):
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
-        self.unfold_menu_button.resize(event.size())
+        # Leave 2px margin for border visibility (fix: internal elements were covering the border)
+        self.unfold_menu_button.setGeometry(2, 2, event.size().width() - 4, event.size().height() - 4)

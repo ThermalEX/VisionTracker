@@ -3,11 +3,15 @@
 /backend/python/DataCollection/data/
 /CLAUDE.md
 /.claude/
+/GEMINI.md
 __pycache__/
 *.pyc
 yolo11n.pt
 yolo11x.pt
-*.onnx
 /Literature_Review.md
 /Interim report.pdf
 /Wang Shuhan PDD.pdf
+
+/HANDOVER.md
+/MidTermPresentation.md
+/中期汇报.md

@@ -1,7 +1,7 @@
 """Vision Tracker - About Page"""
 
 from PyQt5.QtCore import Qt, QUrl
-from PyQt5.QtGui import QDesktopServices
+from PyQt5.QtGui import QDesktopServices, QFont
 
 from siui.components import (
     SiDenseVContainer,
@@ -30,13 +30,22 @@ class AboutPage(SiPage):
         # App info section
         version_container = SiDenseVContainer(self)
         version_container.setAlignment(Qt.AlignCenter)
-        version_container.setFixedHeight(100)
+        version_container.setFixedHeight(180)
 
+        # ASCII Art title
+        ascii_title = (
+            r"____   ____ __          __                  ___________                         __" + "\n"
+            r"\   \ /   /|__|  ______|__|  ____    ____   \__    ___/_______ _____     ____  |  | __  ____ _______" + "\n"
+            r" \   Y   / |  | /  ___/|  | /  _ \  /    \    |    |   \_  __ \\__  \  _/ ___\ |  |/ /_/ __ \\_  __ " + "\\\n"
+            r"  \     /  |  | \___ \ |  |(  <_> )|   |  \   |    |    |  | \/ / __ \_\  \___ |    < \  ___/ |  | \/" + "\n"
+            r"   \___/   |__|/____  >|__| \____/ |___|  /   |____|    |__|   (____  / \___  >|__|_ \ \___  >|__|" + "\n"
+            r"                    \/                  \/                          \/      \/      \/     \/"
+        )
         self.app_name_label = SiLabel(self)
         self.app_name_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
-        self.app_name_label.setFont(SiFont.tokenized(GlobalFont.L_MEDIUM))
+        self.app_name_label.setFont(QFont("Consolas", 9))
         self.app_name_label.setStyleSheet(f"color: {self.getColor(SiColor.TEXT_A)}")
-        self.app_name_label.setText("Vision Tracker")
+        self.app_name_label.setText(ascii_title)
 
         self.version_label = SiLabel(self)
         self.version_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
@@ -73,12 +82,20 @@ class AboutPage(SiPage):
         with self.titled_widget_group as group:
             group.addTitle("Author")
 
+            self.button_to_github = SiSimpleButton(self)
+            self.button_to_github.resize(32, 32)
+            self.button_to_github.attachment().load(SiGlobal.siui.iconpack.get("ic_fluent_open_regular"))
+            self.button_to_github.clicked.connect(
+                lambda: QDesktopServices.openUrl(QUrl("https://github.com/ThermalEX/HonoursStageProject"))
+            )
+
             self.option_card_author = SiOptionCardLinear(self)
             self.option_card_author.setTitle(
                 "Wang Shuhan",
-                "Honours Stage Project - Academic Research Purpose Only"
+                "Honours Stage Project - View on GitHub"
             )
             self.option_card_author.load(SiGlobal.siui.iconpack.get("ic_fluent_person_regular"))
+            self.option_card_author.addWidget(self.button_to_github)
 
             group.addWidget(self.option_card_author)
 

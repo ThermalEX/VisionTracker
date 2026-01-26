@@ -68,10 +68,9 @@ class LayerMain(SiLayer):
         self.user_button.attachment().setSvgSize(20, 20)
         self.user_button.clicked.connect(self.user_button_clicked.emit)
 
-        self.container_title.addPlaceholder(24)  # 往右移动
-        self.container_title.addPlaceholder(16)
+        self.container_title.addPlaceholder(80)  # 往右移动，避开侧边栏
         self.container_title.addWidget(self.app_icon)
-        self.container_title.addPlaceholder(16)
+        self.container_title.addPlaceholder(12)
         self.container_title.addWidget(self.app_title)
 
         self.page_view = PageView(self)
@@ -109,6 +108,10 @@ class LayerMain(SiLayer):
 
     def setTitle(self, title):
         self.app_title.setText(title)
+
+    def setAppIcon(self, icon_path):
+        """Set the app icon in the title bar."""
+        self.app_icon.load(icon_path)
 
     def addPage(self, page, icon, hint: str, side="top"):
         """

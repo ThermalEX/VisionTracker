@@ -121,6 +121,6 @@ class LayerOverLays(SiLayer):
                                        int((self.height() - self.state_change_overlay.height()) * 0.785))
 
         self.state_change_overlay.setContent(
-            "设置窗口大小", f"{self.width()}×{self.height()}", "无快捷键"
+            "Window Size", f"{self.width()}×{self.height()}", "No Shortcut"
         )
 
