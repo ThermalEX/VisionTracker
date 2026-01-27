@@ -2,3 +2,7 @@ from .page_home import HomePage
 from .page_about import AboutPage
 from .page_user import UserPage
 from .page_config import ConfigPage
+from .page_settings import SettingsPage
+from .page_statistics import StatisticsPage
+from .page_logs import LogsPage
+from .page_help import HelpPage

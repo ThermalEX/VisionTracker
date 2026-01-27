@@ -10,7 +10,7 @@ from siui.components import SiPixLabel, SiLabel, SiTitledWidgetGroup
 from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.page import SiPage
 from siui.components.slider_ import SiScrollBar
-from siui.components.widgets.button import SiPushButton
+from siui.components.button import SiCapsuleButton
 from siui.core import GlobalFont, Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -112,35 +112,32 @@ class HomePage(SiPage):
         self.config_combo._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
         # More configurations will be added from Settings page
 
-        # Button colors
-        self._default_panel_color = "#4C4554"
-        self._default_shadow_color = "#2D2833"
-        self._button_colors = {
-            "start": ("#28a745", "#1e7e34"),
-            "pause": ("#007bff", "#0056b3"),
-            "stop": ("#dc3545", "#a71d2a"),
-        }
+        # Button management for exclusive toggle
+        self._current_active_button = None
 
-        # Start button
-        self.start_button = SiPushButton(self.left_panel)
+        # Start button (Green theme)
+        self.start_button = SiCapsuleButton(self.left_panel)
         self.start_button.setGeometry(20, 96, 240, 44)
-        self.start_button.attachment().load(SiGlobal.siui.iconpack.get("ic_fluent_play_filled"))
-        self.start_button.attachment().setText("  Start")
-        self.start_button.clicked.connect(self._on_start_clicked)
+        self.start_button.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_play_filled"))
+        self.start_button.setValue("Start")  # Value for right side
+        self.start_button.setThemeColor(SiCapsuleButton.Theme.Green)
+        self.start_button.toggled.connect(self._on_start_toggled)
 
-        # Pause button
-        self.pause_button = SiPushButton(self.left_panel)
+        # Pause button (Yellow theme)
+        self.pause_button = SiCapsuleButton(self.left_panel)
         self.pause_button.setGeometry(20, 152, 240, 44)
-        self.pause_button.attachment().load(SiGlobal.siui.iconpack.get("ic_fluent_pause_filled"))
-        self.pause_button.attachment().setText("  Pause")
-        self.pause_button.clicked.connect(self._on_pause_clicked)
+        self.pause_button.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_pause_filled"))
+        self.pause_button.setValue("Pause")  # Value for right side
+        self.pause_button.setThemeColor(SiCapsuleButton.Theme.Yellow)
+        self.pause_button.toggled.connect(self._on_pause_toggled)
 
-        # Stop button
-        self.stop_button = SiPushButton(self.left_panel)
+        # Stop button (Red theme)
+        self.stop_button = SiCapsuleButton(self.left_panel)
         self.stop_button.setGeometry(20, 208, 240, 44)
-        self.stop_button.attachment().load(SiGlobal.siui.iconpack.get("ic_fluent_stop_filled"))
-        self.stop_button.attachment().setText("  Stop")
-        self.stop_button.clicked.connect(self._on_stop_clicked)
+        self.stop_button.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_stop_filled"))
+        self.stop_button.setValue("Stop")  # Value for right side
+        self.stop_button.setThemeColor(SiCapsuleButton.Theme.Red)
+        self.stop_button.toggled.connect(self._on_stop_toggled)
 
         # === Right Panel: Console Output ===
         self.right_panel = SiLabel(self.body_area)
@@ -251,39 +248,34 @@ Welcome to Vision Tracker!
         scrollbar = self.terminal_output.verticalScrollBar()
         scrollbar.setValue(scrollbar.maximum())
 
-    def _set_button_active(self, active_button: str):
-        """Set the active button and reset others to default color."""
-        buttons = {
-            "start": self.start_button,
-            "pause": self.pause_button,
-            "stop": self.stop_button,
-        }
-        for name, button in buttons.items():
-            if name == active_button:
-                panel_color, shadow_color = self._button_colors[name]
-            else:
-                panel_color, shadow_color = self._default_panel_color, self._default_shadow_color
-            # Directly update button styles
-            button.body_top.setStyleSheet(f"background-color: {panel_color}")
-            button.body_bottom.setStyleSheet(f"background-color: {shadow_color}")
+    def _set_button_active(self, active_button):
+        """Set the active button and deactivate others for exclusive toggle."""
+        buttons = [self.start_button, self.pause_button, self.stop_button]
+        for button in buttons:
+            if button != active_button:
+                button.setChecked(False)
+        self._current_active_button = active_button
 
-    def _on_start_clicked(self):
-        """Handle start button click."""
-        self._set_button_active("start")
-        config = self.config_combo.currentText() or "Default"
-        self.log("Starting tracking system...", "INFO")
-        self.log(f"Current configuration: {config}", "INFO")
-        self.log("Tracking system started", "SUCCESS")
+    def _on_start_toggled(self, checked):
+        """Handle start button toggle."""
+        if checked:
+            self._set_button_active(self.start_button)
+            config = self.config_combo.currentText() or "Default"
+            self.log("Starting tracking system...", "INFO")
+            self.log(f"Current configuration: {config}", "INFO")
+            self.log("Tracking system started", "SUCCESS")
 
-    def _on_pause_clicked(self):
-        """Handle pause button click."""
-        self._set_button_active("pause")
-        self.log("Tracking paused", "WARN")
+    def _on_pause_toggled(self, checked):
+        """Handle pause button toggle."""
+        if checked:
+            self._set_button_active(self.pause_button)
+            self.log("Tracking paused", "WARN")
 
-    def _on_stop_clicked(self):
-        """Handle stop button click."""
-        self._set_button_active("stop")
-        self.log("Tracking stopped", "INFO")
+    def _on_stop_toggled(self, checked):
+        """Handle stop button toggle."""
+        if checked:
+            self._set_button_active(self.stop_button)
+            self.log("Tracking stopped", "INFO")
 
     def resizeEvent(self, event):
         super().resizeEvent(event)

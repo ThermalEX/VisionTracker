@@ -43,6 +43,7 @@ class ABCSiLineEdit(SiWidget):
 
         self.is_focus_in = False
         self.padding_ = 0
+        self.show_underline_ = True
 
         self.container_ = SiDenseHContainer(self)
         self.container_.setAlignment(Qt.AlignVCenter)
@@ -59,6 +60,14 @@ class ABCSiLineEdit(SiWidget):
         self.outfit_label_bottom = SiLabel(self)
         self.outfit_label_bottom.stackUnder(self.outfit_label_top)
         self.outfit_label_bottom.setFixedStyleSheet("border-radius: 4px")
+
+    def setShowUnderline(self, show: bool):
+        """Set whether to show the underline effect"""
+        self.show_underline_ = show
+        self.outfit_label_bottom.setVisible(show)
+
+    def showUnderline(self) -> bool:
+        return self.show_underline_
 
     def container(self):
         return self.container_
@@ -79,7 +88,9 @@ class ABCSiLineEdit(SiWidget):
 
     def on_focus_changed(self, is_on):
         w, h = self.size().width(), self.size().height()
-        if is_on:
+        if not self.show_underline_:
+            self.outfit_label_top.resize(w, h)
+        elif is_on:
             self.outfit_label_top.resize(w, h - 2)
         else:
             self.outfit_label_top.resize(w, h - 1)
@@ -104,5 +115,6 @@ class ABCSiLineEdit(SiWidget):
         super().resizeEvent(event)
         self.container_.resize(event.size())
         self.outfit_label_bottom.resize(event.size())
+        height_offset = 0 if not self.show_underline_ else 1
         self.outfit_label_top.setGeometry(
-            self.padding_, 0, event.size().width() - 2 * self.padding_, event.size().height() - 1)
+            self.padding_, 0, event.size().width() - 2 * self.padding_, event.size().height() - height_offset)

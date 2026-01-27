@@ -144,6 +144,8 @@ class PageView(SiDenseHContainer):
     """
     页面视图，包括左侧的导航栏和右侧的页面
     """
+    pageChanged = pyqtSignal(str)  # 发出当前页面名称
+
     def __init__(self, *args, **kwargs):
         super().__init__(*args, *kwargs)
 
@@ -152,6 +154,9 @@ class PageView(SiDenseHContainer):
 
         self.setSpacing(0)
         self.setAdjustWidgetsSize(True)
+
+        # 存储页面名称
+        self._page_hints = []
 
         # 创建导航栏
         self.page_navigator = PageNavigator(self)
@@ -165,22 +170,26 @@ class PageView(SiDenseHContainer):
         self.addWidget(self.page_navigator)
         self.addWidget(self.stacked_container)
 
-    def _get_page_toggle_method(self, index):
-        return lambda: self.stacked_container.setCurrentIndex(index)
+    def _get_page_toggle_method(self, index, hint):
+        def toggle():
+            self.stacked_container.setCurrentIndex(index)
+            self.pageChanged.emit(hint)
+        return toggle
 
     def addPage(self, page, icon, hint, side="top"):
         """
         添加页面，这会在导航栏添加一个按钮，并在堆叠容器中添加页面
         :param page: 页面控件
         :param icon: 按钮的 svg 数据或路径
-        :param hint: 工具提示
+        :param hint: 工具提示（也用作页面名称）
         :param side: 按钮添加在哪一侧
         """
+        self._page_hints.append(hint)
         self.stacked_container.addWidget(page)
         self.page_navigator.addPageButton(
             icon,
             hint,
-            self._get_page_toggle_method(self.stacked_container.widgetsAmount() - 1),
+            self._get_page_toggle_method(self.stacked_container.widgetsAmount() - 1, hint),
             side
         )
 

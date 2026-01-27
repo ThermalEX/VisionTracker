@@ -17,7 +17,7 @@ from siui.templates.application.components.layer.layer_login import LayerLogin
 from siui.templates.application.components.layer.layer_right_message_sidebar.messagebox import SiSideMessageBox
 
 from . import icons
-from .components import HomePage, AboutPage, UserPage, ConfigPage
+from .components import HomePage, AboutPage, UserPage, ConfigPage, SettingsPage, StatisticsPage, LogsPage, HelpPage
 
 from auth import DatabaseManager, SessionManager, EmailService
 from auth.config import AuthConfig
@@ -56,15 +56,13 @@ class VisionTrackerApp(SiliconApplication):
         self.resize(1200, 725)
         self.move((screen_geo.width() - self.width()) // 2, (screen_geo.height() - self.height()) // 2)
 
-        # Title and icon
-        self.layerMain().setTitle("Vision Tracker")
+        # Window title and icon
         self.setWindowTitle("Vision Tracker")
 
-        # Set window icon and title bar icon
+        # Set window icon
         icon_path = os.path.join(current_dir, "img", "app_icon.png")
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
-            self.layerMain().setAppIcon(icon_path)
 
         # Add pages
         # Home page - top
@@ -80,8 +78,41 @@ class VisionTrackerApp(SiliconApplication):
         self.config_page = ConfigPage(self)
         self.layerMain().addPage(
             self.config_page,
-            icon=SiGlobal.siui.iconpack.get("ic_fluent_edit_settings_regular"),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_edit_settings_filled"),
             hint="Configuration",
+            side="top"
+        )
+
+        # Statistics page - top
+        self.layerMain().addPage(
+            StatisticsPage(self),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_data_pie_filled"),
+            hint="Statistics",
+            side="top"
+        )
+
+        # Logs page - top
+        self.layerMain().addPage(
+            LogsPage(self),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_document_text_clock_filled"),
+            hint="Logs",
+            side="top"
+        )
+
+        # Help page - top
+        self.help_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
+        self.layerMain().addPage(
+            HelpPage(self),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_chat_help_filled"),
+            hint="Help",
+            side="top"
+        )
+
+        # Settings page - top (last in top section)
+        self.layerMain().addPage(
+            SettingsPage(self),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_settings_filled"),
+            hint="Settings",
             side="top"
         )
 
@@ -185,7 +216,7 @@ class VisionTrackerApp(SiliconApplication):
             self._sendHelpNotification()
 
     def _sendHelpNotification(self):
-        """Send help notification with a button to navigate to About page."""
+        """Send help notification with a button to navigate to Help page."""
         sidebar = self.LayerRightMessageSidebar()
 
         # Create custom message box
@@ -224,7 +255,7 @@ class VisionTrackerApp(SiliconApplication):
             "padding-right: 12px;"
             f"color: {sidebar.getColor(SiColor.TEXT_D)}"
         )
-        desc_label.setText("Check out the About page to learn more.")
+        desc_label.setText("Check out the Help page to learn more.")
 
         # Button row container (for checkbox and button)
         btn_row = SiLabel(sidebar)
@@ -245,14 +276,14 @@ class VisionTrackerApp(SiliconApplication):
 
         dont_show_checkbox.toggled.connect(on_checkbox_toggled)
 
-        # Button to navigate to About page
-        about_btn = SiPushButton(btn_row)
-        about_btn.setFixedSize(120, 32)
-        about_btn.setText("View About")
-        about_btn.clicked.connect(lambda: self.layerMain().setPage(2))
-        about_btn.clicked.connect(msg_box.closeLater)
+        # Button to navigate to Help page
+        help_btn = SiPushButton(btn_row)
+        help_btn.setFixedSize(120, 32)
+        help_btn.setText("View Help")
+        help_btn.clicked.connect(lambda: self.layerMain().setPage(4))
+        help_btn.clicked.connect(msg_box.closeLater)
         # Position button on the right side
-        about_btn.move(content_width - 120 - 24, 0)
+        help_btn.move(content_width - 120 - 24, 0)
 
         container.addWidget(title_label)
         container.addWidget(desc_label)
@@ -275,6 +306,8 @@ class VisionTrackerApp(SiliconApplication):
         # 取消侧边栏所有按钮的选中状态
         for btn in self.layerMain().page_view.page_navigator.buttons:
             btn.setActive(False)
+        # 更新标题栏页面名称
+        self.layerMain().setPageName("User")
 
     def logout(self):
         """Logout current user."""

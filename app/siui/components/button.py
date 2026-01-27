@@ -2010,6 +2010,7 @@ class SiCapsuleButton(QAbstractButton):
         self.setCheckable(True)
 
         self._value = 0
+        self._icon_svg = None  # SVG icon for left side
         self._label_margin = QMargins(18, 0, 18, 0)
         self._value_margin = QMargins(16, 0, 16, 0)
         self._indicator_margin = QMargins(12, 0, 12, 0)
@@ -2143,7 +2144,10 @@ class SiCapsuleButton(QAbstractButton):
         label_metrics = QFontMetrics(label_font)
         value_metrics = QFontMetrics(value_font)
 
-        label_text_width = label_metrics.horizontalAdvance(self.text())
+        if self._icon_svg:
+            label_text_width = 18  # Icon size
+        else:
+            label_text_width = label_metrics.horizontalAdvance(self.text())
         value_text_width = value_metrics.horizontalAdvance(str(self._value))
 
         total_width = (
@@ -2160,6 +2164,11 @@ class SiCapsuleButton(QAbstractButton):
     def setValue(self, v):
         self._value = v
         self.updateGeometry()
+
+    def setIcon(self, svg_data: bytes) -> None:
+        """Set SVG icon for left side (replaces text)."""
+        self._icon_svg = svg_data
+        self.update()
 
     def setThemeColor(self, color: QColor) -> None:
         h, s, v, _ = color.getHsv()
@@ -2222,28 +2231,32 @@ class SiCapsuleButton(QAbstractButton):
         painter.drawPath(path)
 
     def _drawIndicatorRect(self, painter: QPainter, rect: QRect) -> None:
-        if self.isChecked():
-            return
-
-        path = QPainterPath()
-        path.addRoundedRect(QRectF(rect), 1, 1)
-        painter.setPen(Qt.NoPen)
-        painter.setBrush(self.style_data.indicator_color)
-        painter.drawPath(path)
+        # Indicator bar disabled
+        pass
 
     def _drawLabelText(self, painter: QPainter, rect: QRect) -> None:
-        option = QTextOption()
-        option.setAlignment(Qt.AlignCenter)
-        painter.setFont(self.font())
-        painter.setPen(self.style_data.label_text_color)
-        painter.drawText(QRectF(rect), self.text(), option)
+        if self._icon_svg:
+            # Draw SVG icon instead of text
+            renderer = QSvgRenderer(self._icon_svg)
+            icon_size = 18
+            icon_x = rect.x() + (rect.width() - icon_size) // 2
+            icon_y = rect.y() + (rect.height() - icon_size) // 2
+            icon_rect = QRectF(icon_x, icon_y, icon_size, icon_size)
+            renderer.render(painter, icon_rect)
+        else:
+            option = QTextOption()
+            option.setAlignment(Qt.AlignCenter)
+            painter.setFont(self.font())
+            painter.setPen(self.style_data.label_text_color)
+            painter.drawText(QRectF(rect), self.text(), option)
 
     def _drawValueText(self, painter: QPainter, rect: QRect) -> None:
         option = QTextOption()
         option.setAlignment(Qt.AlignCenter)
         painter.setFont(self.font())
         painter.setPen(self._value_text_color)
-        painter.drawText(QRectF(rect), str(self._value), option)
+        # Draw text in uppercase
+        painter.drawText(QRectF(rect), str(self._value).upper(), option)
 
     def _drawHoverOverlayRect(self, painter: QPainter, rect: QRect) -> None:
         path = QPainterPath()
@@ -2269,16 +2282,21 @@ class SiCapsuleButton(QAbstractButton):
         label_metrics = QFontMetrics(label_font)
         value_metrics = QFontMetrics(value_font)
 
-        label_text_width = label_metrics.horizontalAdvance(self.text())
+        if self._icon_svg:
+            label_text_width = 18  # Icon size
+        else:
+            label_text_width = label_metrics.horizontalAdvance(self.text())
         value_text_width = value_metrics.horizontalAdvance(str(self._value))
 
         label_rect_width = label_text_width + self._label_margin.left() + self._label_margin.right()
-        value_rect_width = value_text_width + self._value_margin.left() + self._value_margin.right()
+        # Value rect fills remaining space for proper centering
+        value_rect_width = full_rect.width() - label_rect_width
 
         body_rect = full_rect.marginsRemoved(QMargins(10, 0, 0, 0))
         label_rect = QRect(0, 0, label_rect_width, full_rect.height())
         value_rect = QRect(label_rect_width, 0, value_rect_width, full_rect.height())
-        indicator_rect = value_rect.marginsRemoved(QMargins(0, full_rect.height() - 2, 0, 0)).marginsRemoved(self._indicator_margin)
+        # Full-width indicator bar under value text (no side margins)
+        indicator_rect = value_rect.marginsRemoved(QMargins(0, full_rect.height() - 2, 0, 0))
 
         renderHints = (
                 QPainter.RenderHint.SmoothPixmapTransform

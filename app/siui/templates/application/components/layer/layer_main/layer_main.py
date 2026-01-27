@@ -3,7 +3,7 @@ from datetime import datetime
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer
 from PyQt5.QtGui import QFont
 
-from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel, SiPixLabel
+from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel
 from siui.components.widgets import SiSimpleButton
 from siui.core import GlobalFont, Si, SiColor, SiGlobal
 from siui.gui import SiFont
@@ -37,18 +37,14 @@ class LayerMain(SiLayer):
         self.container_title.setAlignment(Qt.AlignCenter)
         self.container_title.setFixedHeight(64)
 
-        # 应用内图标
-        self.app_icon = SiPixLabel(self)
-        self.app_icon.resize(24, 24)
-        self.app_icon.load("./img/logo_new.png")
-
-        # 应用标题
-        self.app_title = SiLabel(self)
-        self.app_title.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
-        title_font = SiFont.getFont(size=21, weight=QFont.Normal)
-        self.app_title.setFont(title_font)
-        self.app_title.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
-        self.app_title.setText("Silicon 应用模版")
+        # 当前页面名称标签
+        self.page_name_label = SiLabel(self)
+        self.page_name_label.setAlignment(Qt.AlignVCenter | Qt.AlignLeft)
+        page_name_font = SiFont.getFont(size=15, weight=QFont.Normal)
+        self.page_name_label.setFont(page_name_font)
+        self.page_name_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        self.page_name_label.setText("Home")
+        self._pending_page_name = None  # 用于动画过渡时存储新页面名称
 
         # 时间日期标签（标题栏中间）
         self.datetime_label = SiLabel(self)
@@ -69,11 +65,13 @@ class LayerMain(SiLayer):
         self.user_button.clicked.connect(self.user_button_clicked.emit)
 
         self.container_title.addPlaceholder(80)  # 往右移动，避开侧边栏
-        self.container_title.addWidget(self.app_icon)
-        self.container_title.addPlaceholder(12)
-        self.container_title.addWidget(self.app_title)
+        self.container_title.addWidget(self.page_name_label)
 
         self.page_view = PageView(self)
+        self.page_view.pageChanged.connect(self.setPageName)
+
+        # 存储页面名称
+        self._page_names = []
 
         # <- 添加到垂直容器
         self.container_title_and_content.addWidget(self.container_title)
@@ -87,7 +85,7 @@ class LayerMain(SiLayer):
             f"background-color: {self.getColor(SiColor.INTERFACE_BG_A)};"
             f"border: 1px solid {self.getColor(SiColor.INTERFACE_BG_B)};"
         )
-        self.app_title.setStyleSheet(f"color: {self.getColor(SiColor.TEXT_B)}")
+        self.page_name_label.setStyleSheet(f"color: {self.getColor(SiColor.TEXT_B)}")
         self.datetime_label.setStyleSheet(f"color: {self.getColor(SiColor.TEXT_C)}")
         # 标题栏圆角矩形样式 - 深紫色背景，无边框
         self.title_bar_bg.setStyleSheet(
@@ -106,21 +104,38 @@ class LayerMain(SiLayer):
         """Set user button icon."""
         self.user_button.attachment().load(icon_data)
 
-    def setTitle(self, title):
-        self.app_title.setText(title)
+    def setPageName(self, name: str):
+        """Set the current page name displayed in title bar with fade animation."""
+        # 如果名称相同，不做任何操作
+        if self.page_name_label.text() == name:
+            return
 
-    def setAppIcon(self, icon_path):
-        """Set the app icon in the title bar."""
-        self.app_icon.load(icon_path)
+        # 存储新名称
+        self._pending_page_name = name
+
+        # 淡出动画
+        self.page_name_label.setOpacityTo(0)
+
+        # 淡出完成后更新文字并淡入
+        QTimer.singleShot(150, self._updatePageNameText)
+
+    def _updatePageNameText(self):
+        """Update page name text and fade in."""
+        if self._pending_page_name:
+            self.page_name_label.setText(self._pending_page_name)
+            self._pending_page_name = None
+        self.page_name_label.setOpacityTo(1)
 
     def addPage(self, page, icon, hint: str, side="top"):
         """
         添加新页面
         :param page: 页面控件
         :param icon: 页面按钮的 svg 数据或路径
-        :param hint: 页面按钮的工具提示
+        :param hint: 页面按钮的工具提示（也用作页面名称）
         :param side: 页面按钮置于哪一侧
         """
+        # 存储页面名称（使用 hint 作为页面名称）
+        self._page_names.append(hint)
         self.page_view.addPage(page, icon, hint, side)
 
     def setPage(self, index):
@@ -129,6 +144,9 @@ class LayerMain(SiLayer):
         # Activate the corresponding navigation button
         if index < len(self.page_view.page_navigator.buttons):
             self.page_view.page_navigator.buttons[index].setActive(True)
+        # Update page name in title bar
+        if index < len(self._page_names):
+            self.setPageName(self._page_names[index])
 
     def resizeEvent(self, event):
         super().resizeEvent(event)
@@ -144,11 +162,10 @@ class LayerMain(SiLayer):
         self.title_bar_bg.setFixedWidth(title_bar_width)
         self.title_bar_bg.move(title_bar_x, 10)  # 垂直居中在标题栏区域
 
-        # 布局标题（往中间移动一点）
-        title_x = 56 + 24  # 比原来多偏移一些
-        title_y = (64 - 24) // 2  # 垂直居中
-        self.app_icon.move(title_x, title_y)
-        self.app_title.move(title_x + 24 + 12, (64 - self.app_title.height()) // 2)
+        # 布局页面名称标签（往中间移动一点）
+        page_name_x = 56 + 24  # 比原来多偏移一些
+        page_name_y = (64 - self.page_name_label.height()) // 2  # 垂直居中
+        self.page_name_label.move(page_name_x, page_name_y)
 
         # 布局时间日期标签（标题栏中间）
         self.datetime_label.setFixedSize(280, 30)
