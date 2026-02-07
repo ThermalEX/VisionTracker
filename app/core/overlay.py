@@ -8,7 +8,7 @@ import win32con
 import math
 from multiprocessing import Process, Queue, Event
 
-from ..utils.config import Config
+from utils.config import Config
 
 
 class OverlayProcess:
@@ -94,6 +94,8 @@ class OverlayProcess:
             mode = data.get('mode', 'PID')
             sens = data.get('sens', Config.SNAP_SENSITIVITY)
             kp = data.get('kp', Config.PID_KP)
+            calibrating = data.get('calibrating', False)
+            calib_move = data.get('calib_move', None)  # (dx, dy) for calibration move line
 
             # Draw ROI corners
             corner_len = 30
@@ -137,6 +139,24 @@ class OverlayProcess:
                     end_y = int(center_y + dy_norm * end_dist)
 
                     cv2.line(overlay, (start_x, start_y), (end_x, end_y), color, 3)
+
+            # Draw calibration move line (blue)
+            if calibrating and calib_move is not None:
+                calib_dx, calib_dy = calib_move
+                calib_dist = math.sqrt(calib_dx * calib_dx + calib_dy * calib_dy)
+                if calib_dist > 1:
+                    calib_dx_norm = calib_dx / calib_dist
+                    calib_dy_norm = calib_dy / calib_dist
+                    calib_start_dist = Config.FOV_WIDTH // 2 + 5
+                    calib_end_dist = Config.FOV_WIDTH // 2 + 40
+
+                    calib_start_x = int(center_x + calib_dx_norm * calib_start_dist)
+                    calib_start_y = int(center_y + calib_dy_norm * calib_start_dist)
+                    calib_end_x = int(center_x + calib_dx_norm * calib_end_dist)
+                    calib_end_y = int(center_y + calib_dy_norm * calib_end_dist)
+
+                    # Yellow line for calibration move direction
+                    cv2.line(overlay, (calib_start_x, calib_start_y), (calib_end_x, calib_end_y), (0, 255, 255), 3)
 
             # Draw status text
             aim_color = (0, 255, 0) if aim_active else (0, 0, 255)

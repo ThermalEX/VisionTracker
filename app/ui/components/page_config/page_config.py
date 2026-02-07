@@ -2,14 +2,16 @@
 
 import os
 import glob
-from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve
-from PyQt5.QtGui import QColor, QPainter, QPainterPath, QFont
-from PyQt5.QtWidgets import QWidget, QGraphicsOpacityEffect, QVBoxLayout, QLineEdit
+from PyQt5.QtCore import Qt, pyqtSignal, QPropertyAnimation, QEasingCurve, QTimer, QRectF
+from PyQt5.QtGui import QColor, QFont, QPainter, QPainterPath, QLinearGradient
+from PyQt5.QtWidgets import QWidget, QGraphicsOpacityEffect, QVBoxLayout, QLineEdit, QApplication
 
 from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel, SiTitledWidgetGroup, SiOptionCardLinear
 from siui.components.page import SiPage
-from siui.components.button import SiPushButtonRefactor as SiPushButton, SiLongPressButtonRefactor as SiLongPressButton
+from siui.components.widgets.button import SiSimpleButton
+from siui.components.button import SiFlatButton, SiPushButtonRefactor, SiLongPressButtonRefactor
 from siui.components.combobox.combobox import SiComboBox
+from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.editbox import SiSpinBox, SiDoubleSpinBox
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
@@ -18,6 +20,129 @@ from siui.core import Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
 from utils.config_manager import ConfigManager
+
+
+class FlatLongPressButton(SiFlatButton):
+    """Flat button with long press functionality and gradient animation."""
+    longPressed = pyqtSignal()
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self._progress = 0.0
+        self._is_pressing = False
+        self._is_long_press = False
+
+        # Timer for progress updates
+        self.mouse_pressed_timer = QTimer(self)
+        self.mouse_pressed_timer.setInterval(1000 // 60)  # 60 FPS
+        self.mouse_pressed_timer.timeout.connect(self._onMousePressed)
+
+        # Timer for backwards animation
+        self.go_backwards_timer = QTimer(self)
+        self.go_backwards_timer.setSingleShot(True)
+        self.go_backwards_timer.setInterval(500)
+        self.go_backwards_timer.timeout.connect(self._goBackwards)
+
+    def _stepLength(self):
+        """Calculate step length for progress increment."""
+        return (1 - self._progress) / 16 + 0.001
+
+    def _onMousePressed(self):
+        """Update progress while mouse is pressed."""
+        self._progress = min(self._progress + self._stepLength(), 1.0)
+        self.update()
+
+        if self._progress >= 1.0:
+            self.mouse_pressed_timer.stop()
+            self.go_backwards_timer.stop()
+            self._is_long_press = True
+            self.longPressed.emit()
+            # Flash effect
+            QTimer.singleShot(200, lambda: self._goBackwards(0))
+
+    def _goBackwards(self, delay=0):
+        """Reset progress with animation."""
+        if delay > 0:
+            QTimer.singleShot(delay, lambda: self._resetProgress())
+        else:
+            self._resetProgress()
+
+    def _resetProgress(self):
+        """Animate progress back to 0."""
+        # Simple linear reset
+        reset_timer = QTimer(self)
+        reset_timer.setInterval(16)  # ~60 FPS
+
+        def animate_reset():
+            self._progress = max(0, self._progress - 0.1)
+            self.update()
+            if self._progress <= 0:
+                reset_timer.stop()
+                reset_timer.deleteLater()
+
+        reset_timer.timeout.connect(animate_reset)
+        reset_timer.start()
+
+    def mousePressEvent(self, event):
+        if event.button() == Qt.LeftButton:
+            self._is_pressing = True
+            self._is_long_press = False
+            self.mouse_pressed_timer.start()
+            self.go_backwards_timer.stop()
+        super().mousePressEvent(event)
+
+    def mouseReleaseEvent(self, event):
+        self._is_pressing = False
+        self.mouse_pressed_timer.stop()
+
+        if self._is_long_press:
+            # Prevent normal click if it was a long press
+            self._is_long_press = False
+            event.accept()
+            return
+        else:
+            if self._progress > 0 and self._progress < 1:
+                self.go_backwards_timer.start()
+
+        super().mouseReleaseEvent(event)
+
+    def paintEvent(self, event):
+        """Custom paint event to draw progress gradient."""
+        if self._progress > 0:
+            # Draw background with progress gradient first
+            painter = QPainter(self)
+            painter.setRenderHint(QPainter.Antialiasing)
+
+            # Draw progress background with gradient
+            rect = self.rect().adjusted(1, 1, -1, -1)
+
+            # Create gradient from left to right
+            gradient = QLinearGradient(rect.left(), rect.top(), rect.right(), rect.top())
+
+            # Red gradient for delete button background
+            progress_color = QColor(180, 30, 30)  # Dark red
+            base_color = QColor(45, 43, 50)  # Default button background
+
+            gradient.setColorAt(max(0, self._progress - 0.0001), progress_color)
+            gradient.setColorAt(self._progress, base_color)
+
+            # Draw rounded rectangle with gradient as background
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(gradient)
+
+            path = QPainterPath()
+            path.addRoundedRect(QRectF(rect), 4, 4)
+            painter.drawPath(path)
+
+            # Draw border
+            painter.setPen(QColor(100, 72, 96))
+            painter.setBrush(Qt.NoBrush)
+            painter.drawPath(path)
+
+            painter.end()
+
+        # Now draw the button content (icon, text) on top
+        super().paintEvent(event)
 
 
 class RoundedDialog(QWidget):
@@ -99,12 +224,12 @@ class AddConfigDialog(RoundedDialog):
         btn_container = SiDenseHContainer(self)
         btn_container.setFixedHeight(32)
 
-        self.btn_cancel = SiPushButton(self)
+        self.btn_cancel = SiPushButtonRefactor(self)
         self.btn_cancel.setText("Cancel")
         self.btn_cancel.setFixedSize(80, 32)
         self.btn_cancel.clicked.connect(self.closeWithAnimation)
 
-        self.btn_confirm = SiPushButton(self)
+        self.btn_confirm = SiPushButtonRefactor(self)
         self.btn_confirm.setText("Create")
         self.btn_confirm.setFixedSize(80, 32)
         self.btn_confirm.clicked.connect(self._onConfirm)
@@ -146,38 +271,55 @@ class ConfigPage(SiPage):
         configs = self._config_manager.list_configs()
         if configs:
             default_idx = configs.index("Default") if "Default" in configs else 0
-            self.config_selector.menu().setIndex(default_idx)
+            self.config_selector.setCurrentIndex(default_idx)
             self._loadConfig(configs[default_idx])
 
     def _createTopBar(self):
         self.top_bar = SiDenseHContainer(self)
         self.top_bar.setFixedHeight(40)
-        self.top_bar.setSpacing(12)
+        self.top_bar.setSpacing(4)
 
-        self.config_selector = SiComboBox(self)
-        self.config_selector.resize(200, 32)
+        # Use SiCapsuleComboBox like in home page
+        self.config_selector = SiCapsuleComboBox(self)
+        self.config_selector.setFixedSize(280, 36)  # Increased width to show longer names
+        self.config_selector.setTitle("Configuration")
+        self.config_selector.setEditable(False)
+        # Remove underline indicator
+        self.config_selector._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
+        self.config_selector._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
         self._loadConfigList()
-        self.config_selector.menu().indexChanged.connect(self._onConfigSelected)
+        self.config_selector.currentIndexChanged.connect(self._onConfigSelected)
         self.top_bar.addWidget(self.config_selector, side="left")
-        self.top_bar.addPlaceholder(16, side="left")
 
-        self.btn_delete = SiLongPressButton(self)
-        self.btn_delete.setText("Hold to Delete")
-        self.btn_delete.setFixedSize(110, 32)
-        self.btn_delete.style_data.button_color = QColor("#C54043")
-        self.btn_delete.style_data.progress_color = QColor("#8B2D2F")
+        # Refresh button
+        self.btn_refresh = SiFlatButton(self)
+        self.btn_refresh.setFixedSize(32, 32)
+        self.btn_refresh.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_arrow_sync_circle_filled"))
+        self.btn_refresh.setToolTip("Refresh config list")
+        self.btn_refresh.clicked.connect(self._onRefreshConfigList)
+        self.top_bar.addWidget(self.btn_refresh, side="left")
+
+        # Delete button (long press for safety)
+        self.btn_delete = FlatLongPressButton(self)
+        self.btn_delete.setFixedSize(32, 32)
+        self.btn_delete.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_delete_filled"))
+        self.btn_delete.setToolTip("Delete config (long press)")
         self.btn_delete.longPressed.connect(self._onDeleteConfig)
         self.top_bar.addWidget(self.btn_delete, side="right")
 
-        self.btn_save = SiPushButton(self)
-        self.btn_save.setText("Save")
-        self.btn_save.setFixedSize(70, 32)
+        # Save button
+        self.btn_save = SiFlatButton(self)
+        self.btn_save.setFixedSize(32, 32)
+        self.btn_save.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_save_filled"))
+        self.btn_save.setToolTip("Save config")
         self.btn_save.clicked.connect(self._onSaveConfig)
         self.top_bar.addWidget(self.btn_save, side="right")
 
-        self.btn_add = SiPushButton(self)
-        self.btn_add.setText("New")
-        self.btn_add.setFixedSize(70, 32)
+        # New button
+        self.btn_add = SiFlatButton(self)
+        self.btn_add.setFixedSize(32, 32)
+        self.btn_add.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_document_add_filled"))
+        self.btn_add.setToolTip("Create new config")
         self.btn_add.clicked.connect(self._showAddConfigDialog)
         self.top_bar.addWidget(self.btn_add, side="right")
 
@@ -228,18 +370,6 @@ class ConfigPage(SiPage):
         self.mode_combo.value_label.setText("Auto Aim + Fire")  # Ensure label is updated
         self.mode_card.addWidget(self.mode_combo)
         self.titled_group.addWidget(self.mode_card)
-
-        # Team Card
-        self.team_card = SiOptionCardLinear(self)
-        self.team_card.setTitle("Team", "Select your team to avoid targeting teammates")
-        self.team_card.load(SiGlobal.siui.iconpack.get("ic_fluent_people_team_regular"))
-        self.team_combo = SiComboBox(self)
-        self.team_combo.resize(200, 32)
-        self.team_combo.menu().addOption("Terrorist (T)", value="T")
-        self.team_combo.menu().addOption("Counter-Terrorist (CT)", value="CT")
-        self.team_combo.menu().setIndex(0)  # Default to "T"
-        self.team_card.addWidget(self.team_combo)
-        self.titled_group.addWidget(self.team_card)
 
         # === FOV Settings ===
         self.titled_group.addTitle("FOV Settings")
@@ -490,15 +620,10 @@ class ConfigPage(SiPage):
         self.titled_group.addWidget(pid_card)
 
     def _loadConfigList(self):
-        menu = self.config_selector.menu()
-        for option in menu.options_[:]:
-            option.setParent(None)
-            option.deleteLater()
-        menu.options_.clear()
-        menu.current_index = None
-        menu.current_value = None
-        for name in self._config_manager.list_configs():
-            menu.addOption(name)
+        """Load config list into the selector."""
+        configs = self._config_manager.list_configs()
+        self.config_selector.clear()
+        self.config_selector.addItems(configs)
 
     def _loadConfig(self, name: str):
         config = self._config_manager.load_config(name)
@@ -514,10 +639,6 @@ class ConfigPage(SiPage):
             mode = config.get("operation_mode", "auto_aim_fire")
             mode_map = {"auto_trigger": 0, "auto_aim": 1, "auto_aim_fire": 2}
             self.mode_combo.menu().setIndex(mode_map.get(mode, 2))
-
-            # Team
-            team = config.get("team", "T")
-            self.team_combo.menu().setIndex(0 if team == "T" else 1)
 
             # FOV
             self.fov_width.setValue(config.get("fov_width", 200))
@@ -560,9 +681,6 @@ class ConfigPage(SiPage):
         mode_idx = self.mode_combo.menu().index()
         mode = mode_values[mode_idx] if mode_idx is not None else "auto_aim"
 
-        # Team
-        team = "T" if self.team_combo.menu().index() == 0 else "CT"
-
         # Priority
         priority_values = ["nearest", "largest", "highest_conf"]
         priority_idx = self.target_priority.menu().index()
@@ -571,7 +689,6 @@ class ConfigPage(SiPage):
         return {
             "model_path": model_path,
             "operation_mode": mode,
-            "team": team,
             "fov_width": self.fov_width.value(),
             "fov_height": self.fov_height.value(),
             "show_overlay": self.show_overlay.isChecked(),
@@ -611,15 +728,35 @@ class ConfigPage(SiPage):
     def _onDeleteConfig(self):
         name = self._config_manager.get_current_config_name()
         if name:
+            # Protect Default config from deletion
+            if name == "Default":
+                self._showNotification("Protected", "Cannot delete Default config.", 2)
+                return
             if self._config_manager.delete_config(name):
                 self._showNotification("Deleted", f"'{name}' deleted.", 1)
                 self._loadConfigList()
                 configs = self._config_manager.list_configs()
                 if configs:
-                    self.config_selector.menu().setIndex(0)
+                    self.config_selector.setCurrentIndex(0)
                     self._loadConfig(configs[0])
+                # Sync with home page
+                self._syncHomePageConfig()
             else:
                 self._showNotification("Failed", "Cannot delete last config.", 3)
+
+    def _onRefreshConfigList(self):
+        """Refresh the config list from disk."""
+        current_name = self._config_manager.get_current_config_name()
+        self._loadConfigList()
+        configs = self._config_manager.list_configs()
+        if current_name in configs:
+            self.config_selector.setCurrentIndex(configs.index(current_name))
+        elif configs:
+            self.config_selector.setCurrentIndex(0)
+            self._loadConfig(configs[0])
+        self._showNotification("Refreshed", "Config list refreshed.", 1)
+        # Sync with home page
+        self._syncHomePageConfig()
 
     def _showNotification(self, title: str, text: str, msg_type: int = 1):
         try:
@@ -646,9 +783,11 @@ class ConfigPage(SiPage):
             self._loadConfigList()
             configs = self._config_manager.list_configs()
             if name in configs:
-                self.config_selector.menu().setIndex(configs.index(name))
+                self.config_selector.setCurrentIndex(configs.index(name))
                 self._loadConfig(name)
             self._showNotification("Created", f"'{name}' created.", 1)
+            # Sync with home page
+            self._syncHomePageConfig()
         else:
             self._showNotification("Failed", "Name exists.", 3)
 
@@ -685,3 +824,12 @@ class ConfigPage(SiPage):
                 pass
         if self._overlay:
             self._overlay.hide()
+
+    def _syncHomePageConfig(self):
+        """Sync config list with home page."""
+        try:
+            app = self.window()
+            if hasattr(app, 'home_page'):
+                app.home_page.refresh_config_list()
+        except Exception:
+            pass
