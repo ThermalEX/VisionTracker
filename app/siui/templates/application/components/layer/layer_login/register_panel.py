@@ -161,9 +161,10 @@ class RegisterPanel(SiWidget):
 
         # Back button
         self.back_button = SiFlatButton(self)
-        self.back_button.setFixedSize(100, 36)
+        self.back_button.setFixedSize(320, 40)
         self.back_button.move(40, 480)
         self.back_button.setText("← Back")
+        self.back_button.setFont(SiFont.getFont(size=14))
         self.back_button.hide()
 
         # Login link
