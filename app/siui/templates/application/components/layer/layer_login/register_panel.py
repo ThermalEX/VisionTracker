@@ -155,15 +155,15 @@ class RegisterPanel(SiWidget):
         # Next/Submit button
         self.submit_button = SiPushButton(self)
         self.submit_button.setFixedSize(320, 44)
-        self.submit_button.move(40, 430)
+        self.submit_button.move(40, 410)
         self.submit_button.setText("Continue")
         self.submit_button.setFont(SiFont.getFont(size=15, weight=QFont.Bold))
 
         # Back button
         self.back_button = SiFlatButton(self)
         self.back_button.setFixedSize(320, 40)
-        self.back_button.move(40, 480)
-        self.back_button.setText("← Back")
+        self.back_button.move(40, 460)
+        self.back_button.setText("Back")
         self.back_button.setFont(SiFont.getFont(size=14))
         self.back_button.hide()
 
