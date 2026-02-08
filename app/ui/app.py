@@ -120,14 +120,16 @@ class VisionTrackerApp(SiliconApplication):
         # Admin page - top (only for admin user)
         self.admin_page = AdminPage(self)
         self.admin_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
-        self.admin_page_button = self.layerMain().addPage(
+        self.layerMain().addPage(
             self.admin_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_shield_filled"),
             hint="Admin",
             side="top"
         )
+        # Store admin button index for later access (4 = Help, 5 = Admin)
+        self.admin_button_index = len(self.layerMain().page_view.page_navigator.buttons) - 1
         # Hide admin page button by default
-        self.admin_page_button.hide()
+        self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
 
         # Settings page - top (last in top section)
         self.layerMain().addPage(
@@ -203,9 +205,9 @@ class VisionTrackerApp(SiliconApplication):
             self.user_page.setUser(user)
             # Show admin page button if user is admin (id == 1)
             if user.id == 1:
-                self.admin_page_button.show()
+                self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].show()
             else:
-                self.admin_page_button.hide()
+                self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
             # Flag to show notifications after window is visible
             self._auto_login_user = user
         else:
@@ -221,9 +223,9 @@ class VisionTrackerApp(SiliconApplication):
 
         # Show admin page button if user is admin (id == 1)
         if user.id == 1:
-            self.admin_page_button.show()
+            self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].show()
         else:
-            self.admin_page_button.hide()
+            self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
 
         # Reset "don't show again" setting on fresh login
         settings = QSettings("VisionTracker", "App")
@@ -345,7 +347,7 @@ class VisionTrackerApp(SiliconApplication):
         """Logout current user."""
         self.session_manager.clear_session()
         self.current_user = None
-        self.admin_page_button.hide()
+        self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
         self.layer_login.showLayer()
 
     def showEvent(self, event):
