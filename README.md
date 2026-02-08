@@ -1,76 +1,144 @@
-# Automated Target Detection and Tracking Using Computer Vision
+# Vision Tracker
 
-![Project Banner](https://img.shields.io/badge/Status-In_Development-orange)  
-![Language](https://img.shields.io/badge/Language-Python-blue)  
-![Framework](https://img.shields.io/badge/Framework-YOLO-red)
+[![Python](https://img.shields.io/badge/Python-3.10+-blue?logo=python&logoColor=white)](https://www.python.org/)
+[![PyTorch](https://img.shields.io/badge/PyTorch-2.0+-ee4c2c?logo=pytorch&logoColor=white)](https://pytorch.org/)
+[![YOLO](https://img.shields.io/badge/YOLO-v11-00FFFF)](https://docs.ultralytics.com/)
+[![PyQt5](https://img.shields.io/badge/PyQt5-5.15+-41CD52?logo=qt&logoColor=white)](https://www.riverbankcomputing.com/software/pyqt/)
+![License](https://img.shields.io/badge/License-Academic-orange)
 
----
+Real-time object detection and tracking desktop application for academic research in computer vision.
 
-## Table of Contents
-
-- [Project Overview](#project-overview)  
-- [Features](#features)  
-- [Project Outline](#project-outline)  
-- [Expected Outcomes](#expected-outcomes)  
-- [Technologies](#technologies)  
-- [Setup Instructions](#setup-instructions)  
-- [Usage](#usage)  
-- [Safety Notice](#safety-notice)  
-- [License](#license)  
-
----
-
-## Project Overview
-
-This project aims to develop an AI-powered system for automated target detection and tracking using computer vision and deep learning. The system leverages recorded video data from first-person shooter (FPS) military simulation games, specifically *Counter-Strike (CS)*, to train and evaluate detection and tracking algorithms.  
-
-The main goal is to explore methods that could be applied in robotics, autonomous surveillance, and defense simulations, ensuring accurate detection and tracking in dynamic environments.
-
----
+![Code Growth](docs/loc_chart.png)
 
 ## Features
 
-- Real-time human figure detection using YOLO  
-- PID-controlled tracking mechanism for smooth target following  
-- Robust image processing for varied lighting and backgrounds  
-- Safe, simulation-based demonstrations using recorded gameplay  
+- **Real-time Detection** - YOLO v11 with TensorRT acceleration
+- **Custom Augmentation** - Resolution reduction, motion blur, HSV jitter for robust training
+- **PID Tracking** - Smooth target following with adaptive control
+- **Team Selection** - CT / ALL / T target filtering
+- **Modern UI** - Custom SiliconUI framework with Fluent design
+- **Multi-process** - Separate capture, detection, and overlay processes
+- **User System** - SQLite authentication with session management
 
----
+## Project Structure
 
-## Project Outline
+```
+app/
+├── main.py                 # Application entry
+├── ui/                     # UI components
+│   ├── app.py             # Main window (SiliconApplication)
+│   └── components/        # Pages (home, config, user, about...)
+├── core/                   # Computer vision modules
+│   ├── capture.py         # Screen/window capture (mss)
+│   ├── detector.py        # YOLO detection
+│   ├── tracker.py         # PID controller
+│   ├── overlay.py         # Visual overlay rendering
+│   └── tracker_manager.py # System coordinator
+├── auth/                   # Authentication system
+├── drivers/                # Mouse driver
+├── siui/                   # SiliconUI framework
+└── data/                   # Configs, avatars, database
 
-1. Collect recorded video data from Counter-Strike to simulate dynamic environments  
-2. Train and fine-tune a YOLO model for human figure detection  
-3. Implement image processing methods to enhance robustness  
-4. Develop a PID-based control module for accurate tracking  
-5. Evaluate system performance through simulated experiments  
-6. Ensure all testing is software-based, with no hazardous hardware involved  
+backend/python/
+├── Train/                  # Model training scripts
+└── DataCollection/         # Data collection tools
 
----
+frontend/python/demo/       # Standalone demo scripts
+```
 
-## Expected Outcomes
+## Tech Stack
 
-- A computer vision system capable of detecting and classifying human figures in real-time  
-- A PID-controlled tracking mechanism for accurate target following  
-- Safe demonstrations using gameplay recordings  
-- Insights into potential applications in robotics, autonomous defense simulations, and intelligent surveillance  
+| Category | Technologies |
+|----------|-------------|
+| UI | PyQt5, SiliconUI (custom) |
+| Detection | YOLO v11, TensorRT, CUDA |
+| Control | PID Controller, Snap Mode |
+| Capture | mss, pygetwindow, win32gui |
+| Database | SQLite |
 
----
+## Installation
 
-## Technologies
+```bash
+# Clone repository
+git clone https://github.com/ThermalEX/HonoursStageProject.git
+cd HonoursStageProject
 
-- **Programming Language:** Python  
-- **Computer Vision Library:** OpenCV  
-- **Deep Learning Framework:** PyTorch, YOLO  
-- **Hardware Requirements:** Standard PC with GPU support (NVIDIA CUDA-enabled recommended)  
-- **Operating System:** Windows 10/11  
+# Create virtual environment
+python -m venv .venv
+.venv\Scripts\activate  # Windows
 
----
+# Install dependencies
+pip install -r requirements.txt
+```
 
-## Setup Instructions
+## Usage
 
-1. Clone the repository:  
-   ```bash
-   git clone https://github.com/YourUsername/HonoursStageProject.git
-   cd HonoursStageProject
+```bash
+# Run desktop application
+python -m app.main
 
+# Or use entry point after installation
+pip install -e .
+vision-tracker
+```
+
+### Hotkeys
+
+| Key | Function |
+|-----|----------|
+| `Caps Lock` | Toggle aim assist |
+| `F6` | Start calibration |
+| `Ctrl+Q` | Exit |
+
+## Configuration
+
+Settings are stored in `app/data/configs/*.json`:
+
+```json
+{
+  "model_path": "path/to/model.engine",
+  "operation_mode": "auto_aim_fire",
+  "fov_width": 200,
+  "fov_height": 200,
+  "pid_kp": 0.5,
+  "pid_ki": 0.03,
+  "pid_kd": 0.001,
+  "snap_threshold": 43,
+  "snap_sensitivity": 1.0
+}
+```
+
+## Training
+
+```bash
+cd backend/python/Train
+python train_YOLO.py
+```
+
+### Data Augmentation
+
+Custom augmentation pipeline designed for game scenarios:
+
+| Augmentation | Purpose |
+|--------------|---------|
+| Resolution Reduce | Simulates distant/low-quality targets |
+| Motion Blur | Handles fast movement scenarios |
+| Gaussian Noise | Improves noise tolerance |
+| Random HSV | Color variation robustness |
+| Random Scale | Multi-scale detection |
+| Random Flip | Horizontal symmetry |
+
+## Academic Purpose
+
+This project is for academic research purposes only, focusing on computer vision and object tracking algorithms. Modern game anti-cheat systems have made this method unable to control the mouse in online games - it can only be used locally for research and testing purposes.
+
+## Requirements
+
+- Python 3.10+
+- Windows 10/11
+- NVIDIA GPU (CUDA support recommended)
+- 8GB+ RAM
+
+## License
+
+Academic use only. Not for commercial or malicious purposes.
