@@ -130,7 +130,15 @@ class VisionTrackerApp(SiliconApplication):
         self.layerMain().page_view.stacked_container.addWidget(self.user_page)
         self.user_page_index = self.layerMain().page_view.stacked_container.widgetsAmount() - 1
 
-        # Admin page - bottom (only for admin user, before About)
+        # About page - bottom (at the very bottom)
+        self.layerMain().addPage(
+            AboutPage(self),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_info_filled"),
+            hint="About",
+            side="bottom"
+        )
+
+        # Admin page - bottom (above About)
         self.admin_page = AdminPage(self)
         self.admin_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
         self.layerMain().addPage(
@@ -143,14 +151,6 @@ class VisionTrackerApp(SiliconApplication):
         self.admin_button_index = len(self.layerMain().page_view.page_navigator.buttons) - 1
         # Hide admin page button by default
         self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
-
-        # About page - bottom
-        self.layerMain().addPage(
-            AboutPage(self),
-            icon=SiGlobal.siui.iconpack.get("ic_fluent_info_filled"),
-            hint="About",
-            side="bottom"
-        )
 
         # 设置标题栏用户按钮图标并连接点击事件
         self.layerMain().setUserButtonIcon(SiGlobal.siui.iconpack.get("ic_fluent_person_filled"))
