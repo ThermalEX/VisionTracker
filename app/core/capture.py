@@ -7,7 +7,7 @@ import mss
 import pygetwindow as gw
 from multiprocessing import Process, Queue, Event
 
-from ..utils.window import get_client_rect_screen
+from utils.window import get_client_rect_screen
 
 
 class CaptureProcess:

@@ -64,9 +64,18 @@ class VisionTrackerApp(SiliconApplication):
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
+        # Pre-load PyTorch modules to avoid DLL conflicts in worker thread
+        from core.detector import Detector
+        from core.tracker import AimController
+
+        # Initialize tracker manager
+        from core.tracker_manager import TrackerManager
+        self.tracker_manager = TrackerManager(self)
+
         # Add pages
         # Home page - top
         self.home_page = HomePage(self)
+        self.home_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
             self.home_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_home_filled"),
@@ -335,3 +344,10 @@ class VisionTrackerApp(SiliconApplication):
         super().resizeEvent(event)
         if hasattr(self, 'layer_login'):
             self.layer_login.resize(event.size())
+
+    def closeEvent(self, event):
+        """Handle window close event."""
+        # Stop tracking system if running
+        if hasattr(self, 'tracker_manager') and self.tracker_manager:
+            self.tracker_manager.stop()
+        super().closeEvent(event)

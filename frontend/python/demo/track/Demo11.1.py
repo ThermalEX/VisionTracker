@@ -135,7 +135,7 @@ SHOW_BBOX = True  # 显示敌人检测框
 # ==================================================
 
 SNAP_THRESHOLD = 40     # 误差大于此值时使用瞬移（像素）
-SNAP_SENSITIVITY = 2.2  # 瞬移灵敏度（校准后更新）
+SNAP_SENSITIVITY = 1  # 瞬移灵敏度（校准后更新）
 SNAP_COOLDOWN = 0.2    # 瞬移后冷却时间（秒）
 SNAP_UPDATE_THRESHOLD = 20  # 瞬移后误差变化阈值
 
@@ -253,7 +253,6 @@ def overlay_process(overlay_queue, running_event, win_x, win_y, win_w, win_h):
         aim_active = data.get('aim_active', False)
         conf = data.get('conf', 0)
         dist = data.get('dist', 0)
-        fps = data.get('fps', 0)
         click_radius = data.get('click_radius', CLICK_RADIUS_MIN)
         mode = data.get('mode', 'PID')  # 'SNAP' or 'PID'
         sens = data.get('sens', SNAP_SENSITIVITY)
@@ -306,9 +305,8 @@ def overlay_process(overlay_queue, running_event, win_x, win_y, win_w, win_h):
                 cv2.line(overlay, (start_x, start_y), (end_x, end_y), color, 3)  # 更粗
 
         aim_color = (0, 255, 0) if aim_active else (0, 0, 255)
-        cv2.putText(overlay, f"FPS:{fps:.0f}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(overlay, f"AIM:{'ON' if aim_active else 'OFF'}", (100, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, aim_color, 2)
-        cv2.putText(overlay, f"FIRE:{'ON' if AUTO_CLICK else 'OFF'}", (200, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
+        cv2.putText(overlay, f"AIM:{'ON' if aim_active else 'OFF'}", (10, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, aim_color, 2)
+        cv2.putText(overlay, f"FIRE:{'ON' if AUTO_CLICK else 'OFF'}", (120, 25), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
         # 显示当前模式
         mode_color = (255, 100, 0) if mode == 'SNAP' else (0, 255, 0)
@@ -450,7 +448,6 @@ def calibrate(model, use_trt, frame_queue, mouse, pid_controller, overlay_queue)
                     'aim_active': True,
                     'conf': 1.0,
                     'dist': error_dist,
-                    'fps': 0,
                     'click_radius': 15,
                     'mode': 'CAL',
                     'sens': SNAP_SENSITIVITY,
@@ -489,7 +486,6 @@ def calibrate(model, use_trt, frame_queue, mouse, pid_controller, overlay_queue)
                     'aim_active': True,
                     'conf': 0,
                     'dist': 0,
-                    'fps': 0,
                     'click_radius': 15,
                     'mode': 'CAL',
                     'sens': SNAP_SENSITIVITY,
@@ -684,9 +680,6 @@ if __name__ == '__main__':
     keyboard.add_hotkey('f6', start_calibrate)
     keyboard.add_hotkey('ctrl+q', lambda: running_event.clear())
 
-    fps_start = time.time()
-    fps_count = 0
-    current_fps = 0.0
     last_click_time = 0
 
     # 状态变量
@@ -729,12 +722,6 @@ if __name__ == '__main__':
             results = model(crop, conf=CONF_THRESHOLD, verbose=False)
         else:
             results = model(crop, conf=CONF_THRESHOLD, imgsz=IMGSZ, verbose=False)
-
-        fps_count += 1
-        if fps_count >= 30:
-            current_fps = fps_count / (time.time() - fps_start)
-            fps_start = time.time()
-            fps_count = 0
 
         all_boxes = []
         if isinstance(results, list) and len(results) > 0:
@@ -877,7 +864,6 @@ if __name__ == '__main__':
                     'aim_active': aim_active,
                     'conf': current_conf,
                     'dist': current_dist,
-                    'fps': current_fps,
                     'click_radius': click_radius,
                     'mode': current_mode,
                     'sens': SNAP_SENSITIVITY,

@@ -6,7 +6,7 @@ import math
 import torch
 from ultralytics import YOLO
 
-from ..utils.config import Config
+from utils.config import Config
 
 
 class Detector:
@@ -93,7 +93,7 @@ class Detector:
         return None, None
 
 
-def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='nearest'):
+def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='nearest', target_team='T'):
     """
     Find the nearest head from detection boxes.
 
@@ -102,16 +102,25 @@ def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='neare
         center_x, center_y: Screen center coordinates
         x1_roi, y1_roi: ROI offset
         priority: 'nearest' or 'confidence'
+        target_team: 'T' to target T heads (class 2), 'CT' to target CT heads (class 0)
 
     Returns:
         (target_info, all_heads) or (None, [])
     """
     heads = []
 
+    # Class mapping: 0 = ct_head, 2 = t_head
+    if target_team == 'CT':
+        target_classes = [0]  # Target CT heads
+    elif target_team == 'T':
+        target_classes = [2]  # Target T heads
+    else:
+        target_classes = [0, 2]  # Target all heads
+
     for box in boxes:
         cls = int(box.cls[0])
-        # Class 0 and 2 are head classes (ct_head, t_head)
-        if cls not in [0, 2]:
+        # Filter by target team
+        if cls not in target_classes:
             continue
 
         bx1, by1, bx2, by2 = map(int, box.xyxy[0])

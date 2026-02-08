@@ -43,27 +43,23 @@ class ResolutionReduce(BaseAugment):
         self.probability = probability
 
     def __call__(self, image, labels):
-        # 按概率决定是否应用增强
         if random.random() > self.probability:
             return image, labels
 
         h, w = image.shape[:2]
-        # 随机选择缩放比例
         scale = random.uniform(self.min_scale, self.max_scale)
 
         if scale < 1.0:
-            # 计算缩小后的尺寸
             new_w = max(1, int(w * scale))
             new_h = max(1, int(h * scale))
 
-            # 先缩小图像
+            # 缩小图像
             small = cv2.resize(image, (new_w, new_h), interpolation=cv2.INTER_LINEAR)
 
-            # 再放大回原尺寸（模拟模糊效果）
+            # 放大回原尺寸
             interpolation = random.choice([cv2.INTER_NEAREST, cv2.INTER_LINEAR])
             image = cv2.resize(small, (w, h), interpolation=interpolation)
 
-        # 标签不需要改变（因为图像尺寸没变）
         return image, labels
 
 

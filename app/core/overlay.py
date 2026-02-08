@@ -96,6 +96,23 @@ class OverlayProcess:
             kp = data.get('kp', Config.PID_KP)
             calibrating = data.get('calibrating', False)
             calib_move = data.get('calib_move', None)  # (dx, dy) for calibration move line
+            show_bbox = data.get('show_bbox', False)
+            boxes = data.get('boxes', [])
+
+            # Draw detection boxes if enabled (all targets, semi-transparent thin lines)
+            if show_bbox and boxes:
+                for box in boxes:
+                    bbox = box.get('bbox')
+                    if bbox:
+                        bx1, by1, bx2, by2 = bbox
+                        cls = box.get('cls', 0)
+                        # Class mapping: 0=ct_head, 1=ct_body, 2=t_head, 3=t_body
+                        # CT (0,1) = blue, T (2,3) = red (lower value = more transparent)
+                        if cls in [0, 1]:
+                            box_color = (100, 0, 0)  # Blue (BGR)
+                        else:
+                            box_color = (0, 0, 100)  # Red (BGR)
+                        cv2.rectangle(overlay, (bx1, by1), (bx2, by2), box_color, 1)
 
             # Draw ROI corners
             corner_len = 30
@@ -113,12 +130,10 @@ class OverlayProcess:
             cv2.line(overlay, (x2_roi, y2_roi), (x2_roi - corner_len, y2_roi), (255, 255, 255), corner_thick)
             cv2.line(overlay, (x2_roi, y2_roi), (x2_roi, y2_roi - corner_len), (255, 255, 255), corner_thick)
 
-            # Draw crosshair dots outside ROI
-            dot_offset = Config.FOV_WIDTH // 2 + 8
-            cv2.circle(overlay, (center_x - dot_offset, center_y), 3, (255, 255, 255), -1)
-            cv2.circle(overlay, (center_x + dot_offset, center_y), 3, (255, 255, 255), -1)
-            cv2.circle(overlay, (center_x, center_y - dot_offset), 3, (255, 255, 255), -1)
-            cv2.circle(overlay, (center_x, center_y + dot_offset), 3, (255, 255, 255), -1)
+            # Calculate diagonal radius from ROI (so line is always outside the box)
+            fov_half_w = (x2_roi - x1_roi) // 2
+            fov_half_h = (y2_roi - y1_roi) // 2
+            fov_diagonal = math.sqrt(fov_half_w * fov_half_w + fov_half_h * fov_half_h)
 
             # Draw target indicator
             if head_x is not None:
@@ -130,8 +145,10 @@ class OverlayProcess:
                 if dist_to_head > 1:
                     dx_norm = dx / dist_to_head
                     dy_norm = dy / dist_to_head
-                    start_dist = Config.FOV_WIDTH // 2 + 5
-                    end_dist = Config.FOV_WIDTH // 2 + 40
+
+                    # Line always starts outside the box (using diagonal)
+                    start_dist = fov_diagonal + 5
+                    end_dist = start_dist + 35
 
                     start_x = int(center_x + dx_norm * start_dist)
                     start_y = int(center_y + dy_norm * start_dist)
@@ -140,22 +157,23 @@ class OverlayProcess:
 
                     cv2.line(overlay, (start_x, start_y), (end_x, end_y), color, 3)
 
-            # Draw calibration move line (blue)
+            # Draw calibration move line (yellow)
             if calibrating and calib_move is not None:
                 calib_dx, calib_dy = calib_move
                 calib_dist = math.sqrt(calib_dx * calib_dx + calib_dy * calib_dy)
                 if calib_dist > 1:
                     calib_dx_norm = calib_dx / calib_dist
                     calib_dy_norm = calib_dy / calib_dist
-                    calib_start_dist = Config.FOV_WIDTH // 2 + 5
-                    calib_end_dist = Config.FOV_WIDTH // 2 + 40
 
-                    calib_start_x = int(center_x + calib_dx_norm * calib_start_dist)
-                    calib_start_y = int(center_y + calib_dy_norm * calib_start_dist)
-                    calib_end_x = int(center_x + calib_dx_norm * calib_end_dist)
-                    calib_end_y = int(center_y + calib_dy_norm * calib_end_dist)
+                    # Line always starts outside the box (using diagonal)
+                    start_dist = fov_diagonal + 5
+                    end_dist = start_dist + 35
 
-                    # Yellow line for calibration move direction
+                    calib_start_x = int(center_x + calib_dx_norm * start_dist)
+                    calib_start_y = int(center_y + calib_dy_norm * start_dist)
+                    calib_end_x = int(center_x + calib_dx_norm * end_dist)
+                    calib_end_y = int(center_y + calib_dy_norm * end_dist)
+
                     cv2.line(overlay, (calib_start_x, calib_start_y), (calib_end_x, calib_end_y), (0, 255, 255), 3)
 
             # Draw status text

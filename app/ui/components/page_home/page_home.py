@@ -156,21 +156,29 @@ class HomePage(SiPage):
         # CT button (lock on CT targets)
         self.ct_button = SiFlatButtonWithIndicator(self.left_panel)
         self.ct_button.setText("CT")
-        self.ct_button.setFixedSize(136, 36)
+        self.ct_button.setFixedSize(88, 36)
         self.ct_button.setToolTip("Lock on CT targets")
+
+        # ALL button (lock on all targets)
+        self.all_button = SiFlatButtonWithIndicator(self.left_panel)
+        self.all_button.setText("ALL")
+        self.all_button.setFixedSize(88, 36)
+        self.all_button.setToolTip("Lock on all targets")
 
         # T button (lock on T targets)
         self.t_button = SiFlatButtonWithIndicator(self.left_panel)
         self.t_button.setText("T")
-        self.t_button.setFixedSize(136, 36)
+        self.t_button.setFixedSize(88, 36)
         self.t_button.setToolTip("Lock on T targets")
 
         self.team_container.addWidget(self.ct_button, side="left")
+        self.team_container.addWidget(self.all_button, side="left")
         self.team_container.addWidget(self.t_button, side="left")
 
         # Team button group for exclusive selection
         self.team_button_group = QButtonGroup(self)
         self.team_button_group.addButton(self.ct_button)
+        self.team_button_group.addButton(self.all_button)
         self.team_button_group.addButton(self.t_button)
         self.team_button_group.setExclusive(True)
         self.team_button_group.buttonClicked.connect(self._on_team_button_clicked)
@@ -328,6 +336,9 @@ class HomePage(SiPage):
         if button == self.ct_button:
             self._target_team = 'CT'
             self.log("Target switched to: CT", "INFO")
+        elif button == self.all_button:
+            self._target_team = 'ALL'
+            self.log("Target switched to: ALL", "INFO")
         else:
             self._target_team = 'T'
             self.log("Target switched to: T", "INFO")

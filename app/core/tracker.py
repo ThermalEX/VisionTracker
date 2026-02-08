@@ -2,7 +2,7 @@
 
 import time
 import math
-from ..utils.config import Config
+from utils.config import Config
 
 
 class PIDController:

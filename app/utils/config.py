@@ -12,9 +12,17 @@ class Config:
     # Detection settings
     CONF_THRESHOLD = 0.3
 
+    # Team settings (which team to target)
+    # 'T' = target T side (we are CT), 'CT' = target CT side (we are T)
+    TARGET_TEAM = 'T'  # Default: we are CT, target T
+
     # Aim settings
     AIM_ENABLED = True
     AIM_KEY = 'caps_lock'  # None for always on
+
+    # Operation mode settings
+    AUTO_AIM = True   # Enable auto aim
+    AUTO_FIRE = True  # Enable auto fire
 
     # Auto fire settings
     AUTO_CLICK = True

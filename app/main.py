@@ -1,5 +1,8 @@
 """Vision Tracker - Main Application Entry Point"""
 
+# Import torch before PyQt5 to avoid DLL conflicts
+import torch
+
 import sys
 from PyQt5.QtWidgets import QApplication
 

@@ -21,6 +21,10 @@ from utils.window import get_client_rect_screen
 # from core.detector import Detector, find_nearest_head
 # from core.overlay import OverlayProcess
 # from core.tracker import AimController
+# from core.video_overlay import VideoOverlay
+
+# Video path for intro
+INTRO_VIDEO_PATH = os.path.join(os.path.dirname(__file__), "..", "data", "assets", "intro.mp4")
 
 
 # Default hotkey configuration
@@ -243,16 +247,24 @@ class TrackerWorker(QThread):
         # Team setting
         Config.TARGET_TEAM = self.config.get('target_team', 'T')
 
+        # Operation mode: auto_trigger, auto_aim, auto_aim_fire
+        operation_mode = self.config.get('operation_mode', 'auto_aim_fire')
+        Config.AUTO_AIM = operation_mode in ['auto_aim', 'auto_aim_fire']
+        Config.AUTO_FIRE = operation_mode in ['auto_trigger', 'auto_aim_fire']
+        self.log_message.emit(f"Mode: {operation_mode}", "INFO")
+
         self.log_message.emit(f"Configuration applied: {self.config.get('name', 'Unknown')}", "INFO")
         self.log_message.emit(f"Target team: {Config.TARGET_TEAM}", "INFO")
 
     def _init_components(self):
         """Initialize all tracking components."""
         # Lazy imports
+        import threading
         from core.capture import CaptureProcess
         from core.detector import Detector
         from core.overlay import OverlayProcess
         from core.tracker import AimController
+        from core.video_overlay import VideoOverlay
 
         try:
             # Get window dimensions
@@ -281,45 +293,70 @@ class TrackerWorker(QThread):
                 window_choice = 0
                 self.log_message.emit(f"Target: {self.window_title}", "INFO")
 
-            # Initialize queues and events
+
+            # Initialize queues and events first
             self._frame_queue = Queue(maxsize=2)
             self._overlay_queue = Queue(maxsize=2) if Config.SHOW_OVERLAY else None
             self._running_event = Event()
             self._running_event.set()
 
-            # Initialize capture process
-            self._capture_process = CaptureProcess(self._frame_queue, self._running_event)
-            self._capture_process.start(window_choice, all_windows)
-            self.log_message.emit("Capture process started", "INFO")
+            # Start all initialization in parallel with video
+            video_overlay = None
+            init_error = [None]  # Use list to capture error from thread
 
-            # Initialize overlay process
-            if Config.SHOW_OVERLAY:
-                self._overlay_process = OverlayProcess(self._overlay_queue, self._running_event)
-                self._overlay_process.start(win_x, win_y, win_w, win_h)
-                self.log_message.emit("Overlay process started", "INFO")
+            def load_all_components():
+                """Load model and start all processes in background."""
+                try:
+                    # Initialize detector
+                    model_path = self.config.get('model_path', '')
+                    if model_path and os.path.exists(model_path):
+                        self._detector = Detector(model_path)
+                        self.log_message.emit(f"Model loaded: {os.path.basename(model_path)}", "SUCCESS")
+                    else:
+                        self.log_message.emit("No model specified or model not found", "WARN")
+                        self._detector = Detector()
 
-            # Initialize detector
-            model_path = self.config.get('model_path', '')
-            if model_path and os.path.exists(model_path):
-                self._detector = Detector(model_path)
-                self.log_message.emit(f"Model loaded: {os.path.basename(model_path)}", "SUCCESS")
-            else:
-                self.log_message.emit("No model specified or model not found", "WARN")
-                self._detector = Detector()
+                    # Check admin privileges
+                    import ctypes
+                    is_admin = ctypes.windll.shell32.IsUserAnAdmin()
+                    if not is_admin:
+                        self.log_message.emit("WARNING: Not running as admin!", "WARN")
 
-            # Check admin privileges
-            import ctypes
-            is_admin = ctypes.windll.shell32.IsUserAnAdmin()
-            if not is_admin:
-                self.log_message.emit("WARNING: Not running as admin - mouse control may not work!", "WARN")
+                    # Initialize mouse driver and aim controller
+                    self._mouse_driver = MouseDriver(log_callback=self.log_message.emit)
+                    if self._mouse_driver.is_loaded():
+                        self._aim_controller = AimController(self._mouse_driver)
+                    else:
+                        self.log_message.emit("Mouse driver not available", "WARN")
+                        self._aim_controller = None
 
-            # Initialize mouse driver and aim controller
-            self._mouse_driver = MouseDriver(log_callback=self.log_message.emit)
-            if self._mouse_driver.is_loaded():
-                self._aim_controller = AimController(self._mouse_driver)
-            else:
-                self.log_message.emit("Mouse driver not available (aim disabled)", "WARN")
-                self._aim_controller = None
+                    # Start capture process
+                    self._capture_process = CaptureProcess(self._frame_queue, self._running_event)
+                    self._capture_process.start(window_choice, all_windows)
+
+                    # Start overlay process (will be hidden behind video)
+                    if Config.SHOW_OVERLAY:
+                        self._overlay_process = OverlayProcess(self._overlay_queue, self._running_event)
+                        self._overlay_process.start(win_x, win_y, win_w, win_h)
+                except Exception as e:
+                    init_error[0] = str(e)
+
+            # Start initialization thread
+            init_thread = threading.Thread(target=load_all_components)
+            init_thread.start()
+
+            # Play intro video while everything initializes
+            if os.path.exists(INTRO_VIDEO_PATH):
+                video_overlay = VideoOverlay(INTRO_VIDEO_PATH)
+                video_overlay.play(win_x, win_y, win_w, win_h)
+                video_overlay.wait()
+
+            # Wait for initialization to complete
+            init_thread.join()
+
+            if init_error[0]:
+                self.log_message.emit(f"Init error: {init_error[0]}", "ERROR")
+                return False
 
             return True
 
@@ -376,62 +413,75 @@ class TrackerWorker(QThread):
             # Check if aim key is active
             aim_active = self._hotkey_manager.is_aim_active()
 
-            # Detect targets
+            # Detect targets (always detect for display, control based on aim_active)
             head_x, head_y = None, None
             current_conf, current_dist = 0, 0
             click_radius = Config.CLICK_RADIUS_MIN
             current_mode = 'PID'
 
-            if self._detector and self._detector.model and aim_active:
+            all_boxes = []
+            if self._detector and self._detector.model:
                 boxes = self._detector.detect(frame, roi=(x1_roi, y1_roi, x2_roi, y2_roi))
-                target, _ = find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi,
-                                              priority=Config.TARGET_PRIORITY,
-                                              target_team=Config.TARGET_TEAM)
+                # Collect all boxes for overlay display (always)
+                for box in boxes:
+                    cls = int(box.cls[0])
+                    bx1, by1, bx2, by2 = map(int, box.xyxy[0])
+                    # Convert to screen coordinates
+                    all_boxes.append({
+                        'bbox': (bx1 + x1_roi, by1 + y1_roi, bx2 + x1_roi, by2 + y1_roi),
+                        'cls': cls
+                    })
 
-                if target:
-                    head_x, head_y, head_r, head_cls, head_conf, head_bbox = target
-                    current_conf = head_conf
+                # Only process targeting when aim is active
+                if aim_active:
+                    target, _ = find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi,
+                                                  priority=Config.TARGET_PRIORITY,
+                                                  target_team=Config.TARGET_TEAM)
 
-                    click_radius = int(head_r * Config.CLICK_RADIUS_RATIO)
-                    click_radius = max(Config.CLICK_RADIUS_MIN, min(Config.CLICK_RADIUS_MAX, click_radius))
+                    if target:
+                        head_x, head_y, head_r, head_cls, head_conf, head_bbox = target
+                        current_conf = head_conf
 
-                    # Calculate error
-                    error_x = head_x - center_x
-                    error_y = head_y - center_y
-                    current_dist = math.sqrt(error_x ** 2 + error_y ** 2)
+                        click_radius = int(head_r * Config.CLICK_RADIUS_RATIO)
+                        click_radius = max(Config.CLICK_RADIUS_MIN, min(Config.CLICK_RADIUS_MAX, click_radius))
 
-                    # Target tracking
-                    target_id = head_cls
-                    if last_target_id is not None and target_id != last_target_id:
-                        if self._aim_controller:
-                            self._aim_controller.reset()
-                    last_target_id = target_id
+                        # Calculate error
+                        error_x = head_x - center_x
+                        error_y = head_y - center_y
+                        current_dist = math.sqrt(error_x ** 2 + error_y ** 2)
 
-                    # Auto fire
-                    current_time = time.time()
-                    if Config.AUTO_CLICK and current_dist <= click_radius:
-                        if self._mouse_driver and self._mouse_driver.is_loaded():
-                            if current_time - last_click_time >= Config.CLICK_INTERVAL:
-                                self._mouse_driver.left_down()
-                                time.sleep(0.005)
-                                self._mouse_driver.left_up()
-                                last_click_time = current_time
+                        # Target tracking
+                        target_id = head_cls
+                        if last_target_id is not None and target_id != last_target_id:
+                            if self._aim_controller:
+                                self._aim_controller.reset()
+                        last_target_id = target_id
 
-                    # Aim control
-                    if self._aim_controller:
-                        current_mode = self._aim_controller.update(error_x, error_y, target_id)
+                        # Auto fire (check AUTO_FIRE config)
+                        current_time = time.time()
+                        if Config.AUTO_FIRE and current_dist <= click_radius:
+                            if self._mouse_driver and self._mouse_driver.is_loaded():
+                                if current_time - last_click_time >= Config.CLICK_INTERVAL:
+                                    self._mouse_driver.left_down()
+                                    time.sleep(0.005)
+                                    self._mouse_driver.left_up()
+                                    last_click_time = current_time
+
+                        # Aim control (check AUTO_AIM config)
+                        if Config.AUTO_AIM and self._aim_controller:
+                            current_mode = self._aim_controller.update(error_x, error_y, target_id)
+                    else:
+                        # No target
+                        if last_target_id:
+                            if self._aim_controller:
+                                self._aim_controller.reset()
+                            last_target_id = None
                 else:
-                    # No target
+                    # Reset when aim is disabled
                     if last_target_id:
                         if self._aim_controller:
                             self._aim_controller.reset()
                         last_target_id = None
-            elif not aim_active:
-                # Reset when aim is disabled
-                if last_target_id:
-                    if self._aim_controller:
-                        self._aim_controller.reset()
-                    last_target_id = None
 
             # Send overlay data
             if self._overlay_queue and Config.SHOW_OVERLAY:
@@ -450,6 +500,8 @@ class TrackerWorker(QThread):
                         'mode': current_mode,
                         'sens': Config.SNAP_SENSITIVITY,
                         'kp': Config.PID_KP,
+                        'show_bbox': Config.SHOW_BBOX,
+                        'boxes': all_boxes,
                     })
                 except Exception:
                     pass
