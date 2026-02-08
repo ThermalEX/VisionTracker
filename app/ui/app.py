@@ -117,20 +117,6 @@ class VisionTrackerApp(SiliconApplication):
             side="top"
         )
 
-        # Admin page - top (only for admin user)
-        self.admin_page = AdminPage(self)
-        self.admin_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
-        self.layerMain().addPage(
-            self.admin_page,
-            icon=SiGlobal.siui.iconpack.get("ic_fluent_shield_filled"),
-            hint="Admin",
-            side="top"
-        )
-        # Store admin button index for later access (4 = Help, 5 = Admin)
-        self.admin_button_index = len(self.layerMain().page_view.page_navigator.buttons) - 1
-        # Hide admin page button by default
-        self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
-
         # Settings page - top (last in top section)
         self.layerMain().addPage(
             SettingsPage(self),
@@ -143,6 +129,20 @@ class VisionTrackerApp(SiliconApplication):
         self.user_page = UserPage(self)
         self.layerMain().page_view.stacked_container.addWidget(self.user_page)
         self.user_page_index = self.layerMain().page_view.stacked_container.widgetsAmount() - 1
+
+        # Admin page - bottom (only for admin user, before About)
+        self.admin_page = AdminPage(self)
+        self.admin_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
+        self.layerMain().addPage(
+            self.admin_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_shield_filled"),
+            hint="Admin",
+            side="bottom"
+        )
+        # Store admin button index for later access
+        self.admin_button_index = len(self.layerMain().page_view.page_navigator.buttons) - 1
+        # Hide admin page button by default
+        self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
 
         # About page - bottom
         self.layerMain().addPage(
