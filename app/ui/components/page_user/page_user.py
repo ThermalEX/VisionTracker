@@ -712,7 +712,10 @@ class UserPage(SiPage):
 
     def _createDefaultAvatar(self):
         """Create a default avatar placeholder."""
-        # Just set a colored background
+        # Clear any previously loaded image
+        self.avatar_label.path_ = None
+        self.avatar_label.setPixmap(QPixmap())
+        # Show colored background as placeholder
         self.avatar_container.setStyleSheet(
             "background-color: #D087DF; border-radius: 40px;"
         )
