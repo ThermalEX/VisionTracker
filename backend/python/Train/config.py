@@ -10,8 +10,7 @@ class TrainConfig:
 
     # ========== 数据相关 ==========
     # 数据集配置文件路径
-    # data_yaml = "../DataCollection/data/dataset.yaml"
-    data_yaml = "E:/BaiduNetdiskDownload/data/dataset.yaml"
+    data_yaml = "E:/data/dataset.yaml"
 
     # 图像大小（正方形）
     img_size = 640
