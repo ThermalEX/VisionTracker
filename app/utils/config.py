@@ -38,6 +38,16 @@ class Config:
     SHOW_OVERLAY = True
     SHOW_BBOX = True
 
+    # Crosshair settings
+    CROSSHAIR_SHOW = True
+    CROSSHAIR_LENGTH = 10
+    CROSSHAIR_THICKNESS = 2
+    CROSSHAIR_GAP = 4
+    CROSSHAIR_COLOR = "green"
+    CROSSHAIR_CENTER_DOT = True
+    CROSSHAIR_DOT_SIZE = 2
+    OVERLAY_OPACITY = 100
+
     # Snap (teleport) settings
     SNAP_THRESHOLD = 40  # use snap when error > this (pixels)
     SNAP_SENSITIVITY = 2.2  # calibrated value

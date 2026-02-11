@@ -10,6 +10,16 @@ from multiprocessing import Process, Queue, Event
 
 from utils.config import Config
 
+# Crosshair color presets (BGR format for OpenCV)
+COLOR_MAP = {
+    'green': (0, 255, 0),
+    'red': (0, 0, 255),
+    'yellow': (0, 255, 255),
+    'cyan': (255, 255, 0),
+    'white': (255, 255, 255),
+    'magenta': (255, 0, 255),
+}
+
 
 class OverlayProcess:
     """Overlay window process manager."""
@@ -68,8 +78,8 @@ class OverlayProcess:
                 win_x, win_y, win_w, win_h,
                 win32con.SWP_FRAMECHANGED | win32con.SWP_SHOWWINDOW)
 
-            # Set color key for transparency (black = transparent)
-            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_COLORKEY)
+            # Set color key + alpha for transparency (black = transparent, alpha = opacity)
+            win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_COLORKEY | win32con.LWA_ALPHA)
 
         last_topmost = time.time()
 
@@ -98,6 +108,15 @@ class OverlayProcess:
             calib_move = data.get('calib_move', None)  # (dx, dy) for calibration move line
             show_bbox = data.get('show_bbox', False)
             boxes = data.get('boxes', [])
+
+            # Update overlay window opacity dynamically
+            overlay_opacity = int(data.get('overlay_opacity', 100) * 255 / 100)
+            if hwnd:
+                try:
+                    win32gui.SetLayeredWindowAttributes(
+                        hwnd, 0, overlay_opacity, win32con.LWA_COLORKEY | win32con.LWA_ALPHA)
+                except Exception:
+                    pass
 
             # Draw detection boxes if enabled (all targets, semi-transparent thin lines)
             if show_bbox and boxes:
@@ -129,6 +148,23 @@ class OverlayProcess:
             # Bottom-right
             cv2.line(overlay, (x2_roi, y2_roi), (x2_roi - corner_len, y2_roi), (255, 255, 255), corner_thick)
             cv2.line(overlay, (x2_roi, y2_roi), (x2_roi, y2_roi - corner_len), (255, 255, 255), corner_thick)
+
+            # Draw crosshair
+            if data.get('crosshair_show', False):
+                ch_len = data.get('crosshair_length', 10)
+                ch_thick = data.get('crosshair_thickness', 2)
+                ch_gap = data.get('crosshair_gap', 4)
+                ch_color = COLOR_MAP.get(data.get('crosshair_color', 'green'), (0, 255, 0))
+                cx, cy = center_x, center_y
+
+                cv2.line(overlay, (cx, cy - ch_gap - ch_len), (cx, cy - ch_gap), ch_color, ch_thick)
+                cv2.line(overlay, (cx, cy + ch_gap), (cx, cy + ch_gap + ch_len), ch_color, ch_thick)
+                cv2.line(overlay, (cx - ch_gap - ch_len, cy), (cx - ch_gap, cy), ch_color, ch_thick)
+                cv2.line(overlay, (cx + ch_gap, cy), (cx + ch_gap + ch_len, cy), ch_color, ch_thick)
+
+                if data.get('crosshair_center_dot', True):
+                    dot_size = data.get('crosshair_dot_size', 2)
+                    cv2.circle(overlay, (cx, cy), dot_size, ch_color, -1)
 
             # Calculate diagonal radius from ROI (so line is always outside the box)
             fov_half_w = (x2_roi - x1_roi) // 2

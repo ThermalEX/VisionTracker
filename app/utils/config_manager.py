@@ -20,6 +20,16 @@ DEFAULT_CONFIG = {
     "show_overlay": True,
     "show_bbox": True,
 
+    # Crosshair Settings
+    "crosshair_show": True,
+    "crosshair_length": 10,
+    "crosshair_thickness": 2,
+    "crosshair_gap": 4,
+    "crosshair_color": "green",
+    "crosshair_center_dot": True,
+    "crosshair_dot_size": 2,
+    "overlay_opacity": 100,
+
     # Fire Settings
     "auto_click": True,
     "click_interval": 0.2,

@@ -187,6 +187,9 @@ class VisionTrackerApp(SiliconApplication):
 
         # Setup user page
         self.user_page.setAuthServices(self.db_manager, self.session_manager, self.email_service)
+
+        # Setup admin page
+        self.admin_page.setAuthServices(self.db_manager)
         self.user_page.logout_requested.connect(self.logout)
         self.user_page.username_changed.connect(self._onUsernameChanged)
 

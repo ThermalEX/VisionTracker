@@ -13,6 +13,7 @@ from siui.components.button import SiFlatButton, SiPushButtonRefactor, SiLongPre
 from siui.components.combobox.combobox import SiComboBox
 from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.editbox import SiSpinBox, SiDoubleSpinBox
+from siui.components.slider.slider import SiSliderH
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
 from siui.components.container import SiTriSectionPanelCard
@@ -413,12 +414,123 @@ class ConfigPage(SiPage):
         self.overlay_card.addWidget(self.show_overlay)
         self.titled_group.addWidget(self.overlay_card)
 
+        self.opacity_card = SiOptionCardLinear(self)
+        self.opacity_card.setTitle("Overlay Opacity", "Transparency of the overlay window")
+        self.opacity_card.load(SiGlobal.siui.iconpack.get("ic_fluent_eye_regular"))
+        self.overlay_opacity = SiSliderH(self)
+        self.overlay_opacity.setFixedSize(180, 24)
+        self.overlay_opacity.setMinimum(0)
+        self.overlay_opacity.setMaximum(100)
+        self.overlay_opacity.setSingleStep(1)
+        self.opacity_card.addWidget(self.overlay_opacity)
+        self.titled_group.addWidget(self.opacity_card)
+
         self.bbox_card = SiOptionCardLinear(self)
         self.bbox_card.setTitle("Show Detection Box", "Display bounding boxes around enemies")
         self.bbox_card.load(SiGlobal.siui.iconpack.get("ic_fluent_checkbox_unchecked_regular"))
         self.show_bbox = SiSwitch(self)
         self.bbox_card.addWidget(self.show_bbox)
         self.titled_group.addWidget(self.bbox_card)
+
+        # === Crosshair Settings ===
+        self.titled_group.addTitle("Crosshair Settings")
+
+        # Crosshair code share card
+        self.crosshair_code_card = SiOptionCardLinear(self)
+        self.crosshair_code_card.setTitle("Crosshair Code", "Copy or paste a crosshair code to share settings")
+        self.crosshair_code_card.load(SiGlobal.siui.iconpack.get("ic_fluent_share_regular"))
+
+        self.btn_paste_crosshair = SiPushButtonRefactor(self)
+        self.btn_paste_crosshair.setText("Paste")
+        self.btn_paste_crosshair.setFixedSize(70, 32)
+        self.btn_paste_crosshair.clicked.connect(self._pasteCrosshairCode)
+
+        self.btn_copy_crosshair = SiPushButtonRefactor(self)
+        self.btn_copy_crosshair.setText("Copy")
+        self.btn_copy_crosshair.setFixedSize(70, 32)
+        self.btn_copy_crosshair.clicked.connect(self._copyCrosshairCode)
+
+        self.crosshair_code_card.addWidget(self.btn_paste_crosshair)
+        self.crosshair_code_card.addWidget(self.btn_copy_crosshair)
+        self.titled_group.addWidget(self.crosshair_code_card)
+
+        self.crosshair_show_card = SiOptionCardLinear(self)
+        self.crosshair_show_card.setTitle("Show Crosshair", "Display a crosshair on the overlay")
+        self.crosshair_show_card.load(SiGlobal.siui.iconpack.get("ic_fluent_target_regular"))
+        self.crosshair_show = SiSwitch(self)
+        self.crosshair_show_card.addWidget(self.crosshair_show)
+        self.titled_group.addWidget(self.crosshair_show_card)
+
+        self.crosshair_dot_card = SiOptionCardLinear(self)
+        self.crosshair_dot_card.setTitle("Center Dot", "Show a dot at the center of the crosshair")
+        self.crosshair_dot_card.load(SiGlobal.siui.iconpack.get("ic_fluent_circle_small_filled"))
+        self.crosshair_center_dot = SiSwitch(self)
+        self.crosshair_dot_card.addWidget(self.crosshair_center_dot)
+        self.titled_group.addWidget(self.crosshair_dot_card)
+
+        # Crosshair color
+        self.crosshair_color_card = SiOptionCardLinear(self)
+        self.crosshair_color_card.setTitle("Crosshair Color", "Color of the crosshair lines")
+        self.crosshair_color_card.load(SiGlobal.siui.iconpack.get("ic_fluent_color_regular"))
+        self.crosshair_color = SiComboBox(self)
+        self.crosshair_color.resize(150, 32)
+        self.crosshair_color.menu().addOption("Green", value="green")
+        self.crosshair_color.menu().addOption("Red", value="red")
+        self.crosshair_color.menu().addOption("Yellow", value="yellow")
+        self.crosshair_color.menu().addOption("Cyan", value="cyan")
+        self.crosshair_color.menu().addOption("White", value="white")
+        self.crosshair_color.menu().addOption("Magenta", value="magenta")
+        self.crosshair_color.menu().setIndex(0)
+        self.crosshair_color_card.addWidget(self.crosshair_color)
+        self.titled_group.addWidget(self.crosshair_color_card)
+
+        # Crosshair parameters card
+        crosshair_card = SiTriSectionPanelCard(self)
+        crosshair_card.setTitle("Crosshair Parameters")
+
+        ch_container = SiDenseHContainer(self)
+        ch_container.setSpacing(24)
+        ch_container.setFixedHeight(90)
+
+        self.crosshair_length = SiSliderSpinBox(self)
+        self.crosshair_length.setTitle("Length (px)")
+        self.crosshair_length.setHint("Length of each crosshair line")
+        self.crosshair_length.resize(180, 84)
+        self.crosshair_length.setMinimum(0)
+        self.crosshair_length.setMaximum(50)
+        self.crosshair_length.setSingleStep(1)
+
+        self.crosshair_thickness = SiSliderSpinBox(self)
+        self.crosshair_thickness.setTitle("Thickness (px)")
+        self.crosshair_thickness.setHint("Thickness of crosshair lines")
+        self.crosshair_thickness.resize(180, 84)
+        self.crosshair_thickness.setMinimum(1)
+        self.crosshair_thickness.setMaximum(10)
+        self.crosshair_thickness.setSingleStep(1)
+
+        self.crosshair_gap = SiSliderSpinBox(self)
+        self.crosshair_gap.setTitle("Gap (px)")
+        self.crosshair_gap.setHint("Gap from center point")
+        self.crosshair_gap.resize(180, 84)
+        self.crosshair_gap.setMinimum(0)
+        self.crosshair_gap.setMaximum(20)
+        self.crosshair_gap.setSingleStep(1)
+
+        self.crosshair_dot_size = SiSliderSpinBox(self)
+        self.crosshair_dot_size.setTitle("Dot Size (px)")
+        self.crosshair_dot_size.setHint("Radius of center dot")
+        self.crosshair_dot_size.resize(180, 84)
+        self.crosshair_dot_size.setMinimum(1)
+        self.crosshair_dot_size.setMaximum(10)
+        self.crosshair_dot_size.setSingleStep(1)
+
+        ch_container.addWidget(self.crosshair_length, side="left")
+        ch_container.addWidget(self.crosshair_thickness, side="left")
+        ch_container.addWidget(self.crosshair_gap, side="left")
+        ch_container.addWidget(self.crosshair_dot_size, side="left")
+        crosshair_card.body().addWidget(ch_container)
+        crosshair_card.adjustSize()
+        self.titled_group.addWidget(crosshair_card)
 
         # === Fire Settings ===
         self.titled_group.addTitle("Fire Settings")
@@ -647,6 +759,18 @@ class ConfigPage(SiPage):
             # Display
             self.show_overlay.setChecked(config.get("show_overlay", True))
             self.show_bbox.setChecked(config.get("show_bbox", True))
+            self.overlay_opacity.setValue(config.get("overlay_opacity", 100))
+
+            # Crosshair
+            self.crosshair_show.setChecked(config.get("crosshair_show", True))
+            self.crosshair_center_dot.setChecked(config.get("crosshair_center_dot", True))
+            self.crosshair_length.setValue(config.get("crosshair_length", 10))
+            self.crosshair_thickness.setValue(config.get("crosshair_thickness", 2))
+            self.crosshair_gap.setValue(config.get("crosshair_gap", 4))
+            self.crosshair_dot_size.setValue(config.get("crosshair_dot_size", 2))
+            color = config.get("crosshair_color", "green")
+            color_map = {"green": 0, "red": 1, "yellow": 2, "cyan": 3, "white": 4, "magenta": 5}
+            self.crosshair_color.menu().setIndex(color_map.get(color, 0))
 
             # Fire
             self.click_interval.setValue(config.get("click_interval", 0.2))
@@ -686,6 +810,11 @@ class ConfigPage(SiPage):
         priority_idx = self.target_priority.menu().index()
         priority = priority_values[priority_idx] if priority_idx is not None else "nearest"
 
+        # Crosshair color
+        color_values = ["green", "red", "yellow", "cyan", "white", "magenta"]
+        color_idx = self.crosshair_color.menu().index()
+        ch_color = color_values[color_idx] if color_idx is not None else "green"
+
         return {
             "model_path": model_path,
             "operation_mode": mode,
@@ -693,6 +822,14 @@ class ConfigPage(SiPage):
             "fov_height": self.fov_height.value(),
             "show_overlay": self.show_overlay.isChecked(),
             "show_bbox": self.show_bbox.isChecked(),
+            "overlay_opacity": self.overlay_opacity.value(),
+            "crosshair_show": self.crosshair_show.isChecked(),
+            "crosshair_center_dot": self.crosshair_center_dot.isChecked(),
+            "crosshair_length": self.crosshair_length.value(),
+            "crosshair_thickness": self.crosshair_thickness.value(),
+            "crosshair_gap": self.crosshair_gap.value(),
+            "crosshair_dot_size": self.crosshair_dot_size.value(),
+            "crosshair_color": ch_color,
             "auto_click": True,
             "click_interval": self.click_interval.value(),
             "click_radius_ratio": self.click_radius_ratio.value(),
@@ -824,6 +961,69 @@ class ConfigPage(SiPage):
                 pass
         if self._overlay:
             self._overlay.hide()
+
+    def _copyCrosshairCode(self):
+        """Encode current crosshair settings into a shareable code and copy to clipboard."""
+        color_values = ["green", "red", "yellow", "cyan", "white", "magenta"]
+        color_idx = self.crosshair_color.menu().index() or 0
+
+        parts = [
+            "CSHR",
+            str(int(self.crosshair_show.isChecked())),
+            str(self.crosshair_length.value()),
+            str(self.crosshair_thickness.value()),
+            str(self.crosshair_gap.value()),
+            str(color_idx),
+            str(int(self.crosshair_center_dot.isChecked())),
+            str(self.crosshair_dot_size.value()),
+        ]
+        code = ";".join(parts)
+
+        clipboard = QApplication.clipboard()
+        clipboard.setText(code)
+        self._showNotification("Copied", f"Crosshair code copied: {code}", 1)
+
+    def _pasteCrosshairCode(self):
+        """Parse a crosshair code from clipboard and apply settings."""
+        clipboard = QApplication.clipboard()
+        code = clipboard.text().strip()
+
+        if not code:
+            self._showNotification("Error", "Clipboard is empty.", 3)
+            return
+
+        parts = code.split(";")
+        if len(parts) != 8 or parts[0] != "CSHR":
+            self._showNotification("Error", "Invalid crosshair code format.", 3)
+            return
+
+        try:
+            show = bool(int(parts[1]))
+            length = int(parts[2])
+            thickness = int(parts[3])
+            gap = int(parts[4])
+            color_idx = int(parts[5])
+            center_dot = bool(int(parts[6]))
+            dot_size = int(parts[7])
+        except (ValueError, IndexError):
+            self._showNotification("Error", "Invalid crosshair code values.", 3)
+            return
+
+        # Validate ranges
+        color_values = ["green", "red", "yellow", "cyan", "white", "magenta"]
+        if not (0 <= color_idx < len(color_values)):
+            color_idx = 0
+
+        # Apply values
+        self.crosshair_show.setChecked(show)
+        self.crosshair_length.setValue(max(0, min(50, length)))
+        self.crosshair_thickness.setValue(max(1, min(10, thickness)))
+        self.crosshair_gap.setValue(max(0, min(20, gap)))
+        self.crosshair_color.menu().setIndex(color_idx)
+        self.crosshair_center_dot.setChecked(center_dot)
+        self.crosshair_dot_size.setValue(max(1, min(10, dot_size)))
+
+        self._showNotification("Applied", "Crosshair code applied successfully.", 1)
 
     def _syncHomePageConfig(self):
         """Sync config list with home page."""

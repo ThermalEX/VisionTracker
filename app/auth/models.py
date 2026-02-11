@@ -2,7 +2,7 @@
 
 from dataclasses import dataclass
 from datetime import datetime
-from typing import Optional
+from typing import Optional, List
 
 from .database import DatabaseManager
 from .security import PasswordSecurity
@@ -209,4 +209,42 @@ class UserRepository:
             return True
         except Exception as e:
             print(f"Error updating avatar: {e}")
+            return False
+
+    def get_all_users(self) -> List[User]:
+        """Get all users."""
+        rows = self.db.execute_query('SELECT * FROM users ORDER BY id')
+        return [User.from_row(row) for row in rows]
+
+    def delete_user(self, user_id: int) -> bool:
+        """Delete a user and their sessions."""
+        try:
+            self.db.execute_command('DELETE FROM sessions WHERE user_id = ?', (user_id,))
+            self.db.execute_command('DELETE FROM users WHERE id = ?', (user_id,))
+            return True
+        except Exception as e:
+            print(f"Error deleting user: {e}")
+            return False
+
+    def reset_user_ids(self) -> bool:
+        """Reset user IDs to be sequential (1, 2, 3...)."""
+        try:
+            users = self.get_all_users()
+            for new_id, user in enumerate(users, start=1):
+                if user.id != new_id:
+                    self.db.execute_command(
+                        'UPDATE sessions SET user_id = ? WHERE user_id = ?',
+                        (new_id, user.id)
+                    )
+                    self.db.execute_command(
+                        'UPDATE users SET id = ? WHERE id = ?',
+                        (new_id, user.id)
+                    )
+            self.db.execute_command(
+                "UPDATE sqlite_sequence SET seq = ? WHERE name = 'users'",
+                (len(users),)
+            )
+            return True
+        except Exception as e:
+            print(f"Error resetting user IDs: {e}")
             return False

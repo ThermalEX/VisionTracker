@@ -244,6 +244,16 @@ class TrackerWorker(QThread):
         Config.PID_COOLDOWN = self.config.get('pid_cooldown', 0.05)
         Config.PID_ERROR_THRESHOLD = self.config.get('pid_error_threshold', 3)
 
+        # Crosshair settings
+        Config.CROSSHAIR_SHOW = self.config.get('crosshair_show', True)
+        Config.CROSSHAIR_LENGTH = self.config.get('crosshair_length', 10)
+        Config.CROSSHAIR_THICKNESS = self.config.get('crosshair_thickness', 2)
+        Config.CROSSHAIR_GAP = self.config.get('crosshair_gap', 4)
+        Config.CROSSHAIR_COLOR = self.config.get('crosshair_color', 'green')
+        Config.CROSSHAIR_CENTER_DOT = self.config.get('crosshair_center_dot', True)
+        Config.CROSSHAIR_DOT_SIZE = self.config.get('crosshair_dot_size', 2)
+        Config.OVERLAY_OPACITY = self.config.get('overlay_opacity', 100)
+
         # Team setting
         Config.TARGET_TEAM = self.config.get('target_team', 'T')
 
@@ -502,6 +512,14 @@ class TrackerWorker(QThread):
                         'kp': Config.PID_KP,
                         'show_bbox': Config.SHOW_BBOX,
                         'boxes': all_boxes,
+                        'crosshair_show': Config.CROSSHAIR_SHOW,
+                        'crosshair_length': Config.CROSSHAIR_LENGTH,
+                        'crosshair_thickness': Config.CROSSHAIR_THICKNESS,
+                        'crosshair_gap': Config.CROSSHAIR_GAP,
+                        'crosshair_color': Config.CROSSHAIR_COLOR,
+                        'crosshair_center_dot': Config.CROSSHAIR_CENTER_DOT,
+                        'crosshair_dot_size': Config.CROSSHAIR_DOT_SIZE,
+                        'overlay_opacity': Config.OVERLAY_OPACITY,
                     })
                 except Exception:
                     pass
@@ -561,6 +579,14 @@ class TrackerWorker(QThread):
                     'kp': Config.PID_KP,
                     'calibrating': True,
                     'calib_move': calib_move,
+                    'crosshair_show': Config.CROSSHAIR_SHOW,
+                    'crosshair_length': Config.CROSSHAIR_LENGTH,
+                    'crosshair_thickness': Config.CROSSHAIR_THICKNESS,
+                    'crosshair_gap': Config.CROSSHAIR_GAP,
+                    'crosshair_color': Config.CROSSHAIR_COLOR,
+                    'crosshair_center_dot': Config.CROSSHAIR_CENTER_DOT,
+                    'crosshair_dot_size': Config.CROSSHAIR_DOT_SIZE,
+                    'overlay_opacity': Config.OVERLAY_OPACITY,
                 })
             except Exception:
                 pass
