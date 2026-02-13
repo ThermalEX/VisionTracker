@@ -8,10 +8,5 @@ __pycache__/
 *.pyc
 yolo11n.pt
 yolo11x.pt
-/Literature_Review.md
-/Interim report.pdf
-/Wang Shuhan PDD.pdf
-
-/HANDOVER.md
-/MidTermPresentation.md
-/中期汇报.md
+app/data/configs/*
+!app/data/configs/Default.json

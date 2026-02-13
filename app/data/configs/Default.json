@@ -1,11 +1,11 @@
 {
-  "model_path": "g:\\Project\\HonoursStageProject\\app\\models\\best 12.23_200.engine",
+  "model_path": "G:\\Project\\HonoursStageProject\\app\\models\\best 12.23_200.engine",
   "operation_mode": "auto_aim_fire",
   "fov_width": 200,
   "fov_height": 200,
   "show_overlay": true,
   "show_bbox": false,
-  "overlay_opacity": 255,
+  "overlay_opacity": 100,
   "crosshair_show": false,
   "crosshair_center_dot": true,
   "crosshair_length": 10,

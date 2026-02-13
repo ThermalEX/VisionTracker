@@ -450,23 +450,42 @@ class AddUserDialog(RoundedDialog):
 class UserTableManager(ABCSiTabelManager):
     """Manager for user table with styled columns and action buttons."""
 
-    # Column indices
-    COL_NUM = 0
-    COL_ID = 1
-    COL_USERNAME = 2
-    COL_EMAIL = 3
-    COL_VERIFIED = 4
-    COL_CREATED = 5
-    COL_LAST_LOGIN = 6
-    COL_EDIT = 7
-    COL_DELETE = 8
-
     def __init__(self, parent):
         super().__init__(parent)
         self.users = []
         self.admin_page = None
+        self.select_mode = False
+        self.selected_ids = set()
+        # Column indices are set dynamically based on select_mode
+        self._update_columns()
+
+    def _update_columns(self):
+        if self.select_mode:
+            self.COL_CHECK = 0
+            self.COL_NUM = 1
+            self.COL_ID = 2
+            self.COL_USERNAME = 3
+            self.COL_EMAIL = 4
+            self.COL_VERIFIED = 5
+            self.COL_CREATED = 6
+            self.COL_LAST_LOGIN = 7
+            self.COL_EDIT = 8
+            self.COL_DELETE = 9
+        else:
+            self.COL_CHECK = -1
+            self.COL_NUM = 0
+            self.COL_ID = 1
+            self.COL_USERNAME = 2
+            self.COL_EMAIL = 3
+            self.COL_VERIFIED = 4
+            self.COL_CREATED = 5
+            self.COL_LAST_LOGIN = 6
+            self.COL_EDIT = 7
+            self.COL_DELETE = 8
 
     def _value_read_parser(self, row_index, col_index):
+        if col_index == self.COL_CHECK:
+            return ""
         if col_index <= self.COL_LAST_LOGIN:
             return self.parent().getRowWidget(row_index)[col_index].text()
         return ""
@@ -474,7 +493,18 @@ class UserTableManager(ABCSiTabelManager):
     def _value_write_parser(self, row_index, col_index, value):
         widget = self.parent().getRowWidget(row_index)[col_index]
 
-        if col_index == self.COL_NUM:
+        if col_index == self.COL_CHECK:
+            user = self.users[row_index]
+            is_selected = user.id in self.selected_ids
+            if user.id == 1:
+                widget.hide()
+            else:
+                self._setCheckIcon(widget, is_selected)
+                widget.clicked.connect(
+                    lambda checked=False, uid=user.id, w=widget: self._onCheckClicked(uid, w)
+                )
+
+        elif col_index == self.COL_NUM:
             widget.setTextColor(self.parent().getColor(SiColor.TEXT_E))
             widget.setText(value)
 
@@ -521,7 +551,27 @@ class UserTableManager(ABCSiTabelManager):
                     lambda u=user: QTimer.singleShot(0, lambda: page._onDeleteUser(u))
                 )
 
+    def _setCheckIcon(self, widget, selected):
+        if selected:
+            widget.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_checkmark_circle_filled"))
+        else:
+            widget.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_circle_regular"))
+
+    def _onCheckClicked(self, user_id, widget):
+        if user_id in self.selected_ids:
+            self.selected_ids.discard(user_id)
+            self._setCheckIcon(widget, False)
+        else:
+            self.selected_ids.add(user_id)
+            self._setCheckIcon(widget, True)
+        if self.admin_page:
+            self.admin_page._updateDeleteSelectedBtn()
+
     def _widget_creator(self, col_index):
+        if col_index == self.COL_CHECK:
+            btn = SiFlatButton(self.parent())
+            btn.setFixedSize(28, 28)
+            return btn
         if col_index <= self.COL_LAST_LOGIN:
             label = SiLabel(self.parent())
             label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
@@ -557,8 +607,11 @@ class _TableHost(SiLabel):
 
     def setTable(self, table):
         if self.table:
-            self.table.hide()
-            self.table.deleteLater()
+            old = self.table
+            self.table = None
+            old.hide()
+            old.setParent(None)
+            old.deleteLater()
         self.table = table
         table.setParent(self)
         table.resize(self.width(), self.height())
@@ -586,6 +639,17 @@ class AdminPage(SiPage):
         self._current_dialog = None
         self.user_repo = None
         self._users = []
+        self._filtered_users = []
+        self._search_text = ""
+        self._current_page = 0
+        self._page_size = 10
+        self._select_mode = False
+        self._selected_ids = set()
+
+        self._search_timer = QTimer(self)
+        self._search_timer.setSingleShot(True)
+        self._search_timer.setInterval(300)
+        self._search_timer.timeout.connect(self._applySearch)
 
         self.titled_group = SiTitledWidgetGroup(self)
         self.titled_group.setSpacing(16)
@@ -651,6 +715,7 @@ class AdminPage(SiPage):
     def _createUserManagementSection(self):
         self.titled_group.addTitle("User Management")
 
+        # Top bar: action buttons
         top_bar = SiDenseHContainer(self)
         top_bar.setFixedHeight(40)
         top_bar.setSpacing(4)
@@ -678,12 +743,77 @@ class AdminPage(SiPage):
 
         self.titled_group.addWidget(top_bar)
 
-        # Table host - wraps the SiTableView
+        # Search bar
+        search_bar = SiDenseHContainer(self)
+        search_bar.setFixedHeight(36)
+        search_bar.setSpacing(8)
+
+        self.search_input = QLineEdit(self)
+        self.search_input.setFixedHeight(32)
+        self.search_input.setPlaceholderText("Search by username or email...")
+        self.search_input.setStyleSheet(INPUT_STYLE)
+        self.search_input.textChanged.connect(self._onSearchChanged)
+        search_bar.addWidget(self.search_input, side="left")
+
+        self.btn_select_mode = SiFlatButton(self)
+        self.btn_select_mode.setFixedSize(32, 32)
+        self.btn_select_mode.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_multiselect_ltr_filled"))
+        self.btn_select_mode.setToolTip("Toggle selection mode")
+        self.btn_select_mode.clicked.connect(self._toggleSelectMode)
+        search_bar.addWidget(self.btn_select_mode, side="right")
+
+        self.btn_delete_selected = FlatLongPressButton(self)
+        self.btn_delete_selected.setFixedSize(32, 32)
+        self.btn_delete_selected.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_delete_filled"))
+        self.btn_delete_selected.setToolTip("Delete selected users (long press)")
+        self.btn_delete_selected.longPressed.connect(self._onDeleteSelected)
+        self.btn_delete_selected.hide()
+        search_bar.addWidget(self.btn_delete_selected, side="right")
+
+        self.titled_group.addWidget(search_bar)
+
+        # Table host
         self.table_host = _TableHost(self)
         self.table_host.setFixedHeight(360)
         self.titled_group.addWidget(self.table_host)
 
-    def _buildTable(self, users):
+        # Pagination bar
+        page_bar = SiDenseHContainer(self)
+        page_bar.setFixedHeight(36)
+        page_bar.setSpacing(8)
+
+        self.total_label = SiLabel(self)
+        self.total_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        self.total_label.setFont(SiFont.getFont(size=12))
+        self.total_label.setTextColor(self.getColor(SiColor.TEXT_E))
+        self.total_label.setText("")
+        page_bar.addWidget(self.total_label, side="left")
+
+        self.btn_next_page = SiFlatButton(self)
+        self.btn_next_page.setFixedSize(32, 32)
+        self.btn_next_page.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_chevron_right_filled"))
+        self.btn_next_page.setToolTip("Next page")
+        self.btn_next_page.clicked.connect(self._onNextPage)
+        page_bar.addWidget(self.btn_next_page, side="right")
+
+        self.page_label = SiLabel(self)
+        self.page_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        self.page_label.setFont(SiFont.getFont(size=12))
+        self.page_label.setTextColor(self.getColor(SiColor.TEXT_D))
+        self.page_label.setFixedHeight(32)
+        self.page_label.setText("Page 1 / 1")
+        page_bar.addWidget(self.page_label, side="right")
+
+        self.btn_prev_page = SiFlatButton(self)
+        self.btn_prev_page.setFixedSize(32, 32)
+        self.btn_prev_page.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_chevron_left_filled"))
+        self.btn_prev_page.setToolTip("Previous page")
+        self.btn_prev_page.clicked.connect(self._onPrevPage)
+        page_bar.addWidget(self.btn_prev_page, side="right")
+
+        self.titled_group.addWidget(page_bar)
+
+    def _buildTable(self, users, start_idx=0):
         """Create a new SiTableView populated with user data."""
         table = SiTableView(self)
         table.resize(self.table_host.width(), self.table_host.height())
@@ -691,7 +821,13 @@ class AdminPage(SiPage):
         manager = UserTableManager(table)
         manager.users = users
         manager.admin_page = self
+        manager.select_mode = self._select_mode
+        manager.selected_ids = self._selected_ids
+        manager._update_columns()
         table.setManager(manager)
+
+        if self._select_mode:
+            table.addColumn("", 44, 40, Qt.AlignHCenter | Qt.AlignVCenter)
 
         table.addColumn("#", 30, 40, Qt.AlignRight | Qt.AlignVCenter)
         table.addColumn("ID", 40, 40, Qt.AlignRight | Qt.AlignVCenter)
@@ -703,12 +839,15 @@ class AdminPage(SiPage):
         table.addColumn("", 36, 40, Qt.AlignHCenter | Qt.AlignVCenter)
         table.addColumn("", 36, 40, Qt.AlignHCenter | Qt.AlignVCenter)
 
-        for idx, user in enumerate(users, start=1):
+        for idx, user in enumerate(users, start=start_idx + 1):
             created = user.created_at.strftime("%Y-%m-%d") if user.created_at else "N/A"
             last_login = user.last_login.strftime("%m-%d %H:%M") if user.last_login else "Never"
             verified = "Yes" if user.is_verified else "No"
 
-            table.addRow(data=[
+            row_data = []
+            if self._select_mode:
+                row_data.append("")  # checkbox
+            row_data.extend([
                 str(idx),
                 str(user.id),
                 user.username,
@@ -719,6 +858,7 @@ class AdminPage(SiPage):
                 "",  # edit button
                 "",  # delete button
             ])
+            table.addRow(data=row_data)
 
         return table
 
@@ -745,31 +885,125 @@ class AdminPage(SiPage):
 
     # ── Data Operations ────────────────────────────────────────────
 
+    def _filterUsers(self):
+        """Apply search filter to user list."""
+        query = self._search_text.lower().strip()
+        if not query:
+            self._filtered_users = list(self._users)
+        else:
+            self._filtered_users = [
+                u for u in self._users
+                if query in u.username.lower() or query in u.email.lower()
+                   or query in str(u.id)
+            ]
+
+    def _getPageUsers(self):
+        """Get users for the current page."""
+        start = self._current_page * self._page_size
+        end = start + self._page_size
+        return self._filtered_users[start:end]
+
+    def _totalPages(self):
+        """Total number of pages."""
+        total = len(self._filtered_users)
+        return max(1, (total + self._page_size - 1) // self._page_size)
+
+    def _updatePagination(self):
+        """Update pagination label and button states."""
+        total_pages = self._totalPages()
+        self._current_page = max(0, min(self._current_page, total_pages - 1))
+        self.page_label.setText(f"Page {self._current_page + 1} / {total_pages}")
+        total = len(self._filtered_users)
+        showing = len(self._getPageUsers())
+        self.total_label.setText(f"Showing {showing} of {total} users")
+
+    def _rebuildTable(self):
+        """Rebuild table with current filter and page."""
+        page_users = self._getPageUsers()
+        start_idx = self._current_page * self._page_size
+
+        table = self._buildTable(page_users, start_idx)
+        self.table_host.setTable(table)
+
+        row_height = 48 + len(page_users) * 40 + 10
+        self.table_host.setFixedHeight(max(120, min(row_height, 500)))
+
+        self._updatePagination()
+        self.titled_group.adjustSize()
+        self.titled_group.arrangeWidget()
+
     def _refreshUsers(self):
         """Reload user list from database."""
         if not self.user_repo:
             return
 
-        users = self.user_repo.get_all_users()
-        self._users = users
+        self._users = self.user_repo.get_all_users()
 
         # Update stats
-        total = len(users)
-        verified = sum(1 for u in users if u.is_verified)
+        total = len(self._users)
+        verified = sum(1 for u in self._users if u.is_verified)
         self.total_users_label.setText(str(total))
         self.verified_users_label.setText(str(verified))
         self.unverified_users_label.setText(str(total - verified))
 
-        # Rebuild table (destroy old, create new)
-        table = self._buildTable(users)
-        self.table_host.setTable(table)
+        self._filterUsers()
+        self._rebuildTable()
 
-        # Adjust table height based on row count (header 48 + rows * 40 + padding)
-        row_height = 48 + len(users) * 40 + 10
-        self.table_host.setFixedHeight(max(120, min(row_height, 500)))
+    # ── Search & Pagination & Batch ──────────────────────────────
 
-        self.titled_group.adjustSize()
-        self.titled_group.arrangeWidget()
+    def _onSearchChanged(self, text):
+        """Handle search input change with debounce."""
+        self._search_text = text
+        self._search_timer.start()
+
+    def _onPrevPage(self):
+        if self._current_page > 0:
+            self._current_page -= 1
+            self._rebuildTable()
+
+    def _onNextPage(self):
+        if self._current_page < self._totalPages() - 1:
+            self._current_page += 1
+            self._rebuildTable()
+
+    def _applySearch(self):
+        """Apply search after debounce delay."""
+        self._current_page = 0
+        self._filterUsers()
+        self._rebuildTable()
+
+    def _toggleSelectMode(self):
+        """Toggle selection mode on/off."""
+        self._select_mode = not self._select_mode
+        if not self._select_mode:
+            self._selected_ids.clear()
+            self.btn_delete_selected.hide()
+        else:
+            self.btn_delete_selected.show()
+            self._updateDeleteSelectedBtn()
+        self._rebuildTable()
+
+    def _updateDeleteSelectedBtn(self):
+        """Update delete button tooltip with count."""
+        count = len(self._selected_ids)
+        self.btn_delete_selected.setToolTip(f"Delete {count} selected user(s) (long press)")
+
+    def _onDeleteSelected(self):
+        """Delete all selected users."""
+        if not self.user_repo or not self._selected_ids:
+            self._showNotification("Info", "No users selected.", 2)
+            return
+
+        count = 0
+        for uid in list(self._selected_ids):
+            if uid == 1:
+                continue
+            if self.user_repo.delete_user(uid):
+                count += 1
+
+        self._selected_ids.clear()
+        self._showNotification("Deleted", f"Deleted {count} user(s).", 1)
+        QTimer.singleShot(50, self._refreshUsers)
 
     def _onDeleteUser(self, user):
         """Delete a single user."""
