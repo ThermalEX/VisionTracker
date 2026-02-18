@@ -1068,6 +1068,8 @@ class TrainingPage(SiPage):
         config["use_amp"] = self.use_amp.isChecked()
         config["cache_images"] = self.cache_images.isChecked()
         config["accumulate_grad"] = self.accumulate_grad.value()
+        # pin_memory conflicts with cache — disable automatically
+        config["pin_memory"] = not self.cache_images.isChecked()
 
         # Save
         config["save_dir"] = self.save_dir_label.text()
