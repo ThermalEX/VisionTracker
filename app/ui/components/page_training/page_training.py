@@ -1144,7 +1144,6 @@ class TrainingPage(SiPage):
         if not line:
             return
         timestamp = datetime.now().strftime("%H:%M:%S")
-        # Detect level from keywords
         lu = line.upper()
         if any(k in lu for k in ("ERROR", "EXCEPTION", "TRACEBACK", "RUNTIMEERROR", "FILENOTFOUND")):
             level, color = "ERROR", "#ff4444"
