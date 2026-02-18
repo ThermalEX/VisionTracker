@@ -16,7 +16,7 @@ from siui.components.editbox import SiSpinBox, SiDoubleSpinBox
 from siui.components.slider.slider import SiSliderH
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
-from siui.components.container import SiTriSectionPanelCard
+from siui.components.container import SiTriSectionFlatCard
 from siui.core import Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -275,6 +275,7 @@ class ConfigPage(SiPage):
             self.config_selector.setCurrentIndex(default_idx)
             self._loadConfig(configs[default_idx])
 
+
     def _createTopBar(self):
         self.top_bar = SiDenseHContainer(self)
         self.top_bar.setFixedHeight(40)
@@ -372,10 +373,22 @@ class ConfigPage(SiPage):
         self.mode_card.addWidget(self.mode_combo)
         self.titled_group.addWidget(self.mode_card)
 
+        # Aim Part Card (Lock Head / Lock Body)
+        self.aim_part_card = SiOptionCardLinear(self)
+        self.aim_part_card.setTitle("Aim Part", "Lock to head or body of detected target")
+        self.aim_part_card.load(SiGlobal.siui.iconpack.get("ic_fluent_zoom_fit_regular"))
+        self.aim_part_combo = SiComboBox(self)
+        self.aim_part_combo.resize(150, 32)
+        self.aim_part_combo.menu().addOption("Head", value="head")
+        self.aim_part_combo.menu().addOption("Body", value="body")
+        self.aim_part_combo.menu().setIndex(0)
+        self.aim_part_card.addWidget(self.aim_part_combo)
+        self.titled_group.addWidget(self.aim_part_card)
+
         # === FOV Settings ===
         self.titled_group.addTitle("FOV Settings")
 
-        fov_card = SiTriSectionPanelCard(self)
+        fov_card = SiTriSectionFlatCard(self)
         fov_card.setTitle("Detection Area")
 
         fov_container = SiDenseHContainer(self)
@@ -485,7 +498,7 @@ class ConfigPage(SiPage):
         self.titled_group.addWidget(self.crosshair_color_card)
 
         # Crosshair parameters card
-        crosshair_card = SiTriSectionPanelCard(self)
+        crosshair_card = SiTriSectionFlatCard(self)
         crosshair_card.setTitle("Crosshair Parameters")
 
         ch_container = SiDenseHContainer(self)
@@ -535,7 +548,7 @@ class ConfigPage(SiPage):
         # === Fire Settings ===
         self.titled_group.addTitle("Fire Settings")
 
-        fire_card = SiTriSectionPanelCard(self)
+        fire_card = SiTriSectionFlatCard(self)
         fire_card.setTitle("Fire Parameters")
 
         fire_container = SiDenseHContainer(self)
@@ -605,7 +618,7 @@ class ConfigPage(SiPage):
         # === Snap Settings ===
         self.titled_group.addTitle("Snap Settings (Instant Move)")
 
-        snap_card = SiTriSectionPanelCard(self)
+        snap_card = SiTriSectionFlatCard(self)
         snap_card.setTitle("Snap Parameters")
 
         snap_container = SiDenseHContainer(self)
@@ -655,7 +668,7 @@ class ConfigPage(SiPage):
         # === PID Settings ===
         self.titled_group.addTitle("PID Settings (Smooth Move)")
 
-        pid_card = SiTriSectionPanelCard(self)
+        pid_card = SiTriSectionFlatCard(self)
         pid_card.setTitle("PID Parameters")
 
         # First row: Kp, Ki, Kd
@@ -752,6 +765,11 @@ class ConfigPage(SiPage):
             mode_map = {"auto_trigger": 0, "auto_aim": 1, "auto_aim_fire": 2}
             self.mode_combo.menu().setIndex(mode_map.get(mode, 2))
 
+            # Aim Part
+            aim_part = config.get("aim_part", "head")
+            aim_part_map = {"head": 0, "body": 1}
+            self.aim_part_combo.menu().setIndex(aim_part_map.get(aim_part, 0))
+
             # FOV
             self.fov_width.setValue(config.get("fov_width", 200))
             self.fov_height.setValue(config.get("fov_height", 200))
@@ -805,6 +823,11 @@ class ConfigPage(SiPage):
         mode_idx = self.mode_combo.menu().index()
         mode = mode_values[mode_idx] if mode_idx is not None else "auto_aim"
 
+        # Aim Part
+        aim_part_values = ["head", "body"]
+        aim_part_idx = self.aim_part_combo.menu().index()
+        aim_part = aim_part_values[aim_part_idx] if aim_part_idx is not None else "head"
+
         # Priority
         priority_values = ["nearest", "largest", "highest_conf"]
         priority_idx = self.target_priority.menu().index()
@@ -818,6 +841,7 @@ class ConfigPage(SiPage):
         return {
             "model_path": model_path,
             "operation_mode": mode,
+            "aim_part": aim_part,
             "fov_width": self.fov_width.value(),
             "fov_height": self.fov_height.value(),
             "show_overlay": self.show_overlay.isChecked(),

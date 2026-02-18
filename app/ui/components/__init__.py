@@ -7,3 +7,5 @@ from .page_settings import SettingsPage
 from .page_statistics import StatisticsPage
 from .page_logs import LogsPage
 from .page_help import HelpPage
+from .page_training import TrainingPage
+from .page_custom_tracker import CustomTrackerPage

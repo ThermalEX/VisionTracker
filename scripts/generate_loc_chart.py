@@ -59,10 +59,6 @@ def get_loc_history():
             if file_result.returncode == 0:
                 total_lines += len(file_result.stdout.split('\n'))
 
-        # Skip outliers (like accidentally committed venv)
-        if total_lines > 50000:
-            continue
-
         data.append({
             'date': commit['date'],
             'lines': total_lines,

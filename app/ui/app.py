@@ -17,7 +17,7 @@ from siui.templates.application.components.layer.layer_login import LayerLogin
 from siui.templates.application.components.layer.layer_right_message_sidebar.messagebox import SiSideMessageBox
 
 from . import icons
-from .components import HomePage, AboutPage, AdminPage, UserPage, ConfigPage, SettingsPage, StatisticsPage, LogsPage, HelpPage
+from .components import HomePage, AboutPage, AdminPage, UserPage, ConfigPage, SettingsPage, StatisticsPage, LogsPage, HelpPage, TrainingPage, CustomTrackerPage
 
 from auth import DatabaseManager, SessionManager, EmailService
 from auth.config import AuthConfig
@@ -108,6 +108,35 @@ class VisionTrackerApp(SiliconApplication):
             side="top"
         )
 
+        # Training page - top (hidden by default, shown in advanced mode)
+        self.training_page = TrainingPage(self)
+        self.layerMain().addPage(
+            self.training_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_brain_circuit_filled"),
+            hint="Training",
+            side="top"
+        )
+        _nav = self.layerMain().page_view.page_navigator
+        self.training_button_index = len(_nav.buttons) - 1
+        _btn = _nav.buttons[self.training_button_index]
+        _btn.hide()
+        _nav.container.widgets_top.remove(_btn)
+
+        # Custom Tracker page - top (hidden by default, shown in advanced mode)
+        self.custom_tracker_page = CustomTrackerPage(self)
+        self.custom_tracker_page.setTrackerManager(self.tracker_manager)
+        self.layerMain().addPage(
+            self.custom_tracker_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_cursor_hover_filled"),
+            hint="Custom Tracker",
+            side="top"
+        )
+        self.custom_tracker_button_index = len(_nav.buttons) - 1
+        _btn = _nav.buttons[self.custom_tracker_button_index]
+        _btn.hide()
+        _nav.container.widgets_top.remove(_btn)
+        _nav.container.arrangeWidget()
+
         # Help page - top
         self.help_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
         self.layerMain().addPage(
@@ -116,10 +145,12 @@ class VisionTrackerApp(SiliconApplication):
             hint="Help",
             side="top"
         )
+        self.help_button_index = len(_nav.buttons) - 1
 
         # Settings page - top (last in top section)
+        self.settings_page = SettingsPage(self)
         self.layerMain().addPage(
-            SettingsPage(self),
+            self.settings_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_settings_filled"),
             hint="Settings",
             side="top"
@@ -162,8 +193,108 @@ class VisionTrackerApp(SiliconApplication):
         # Initialize authentication system
         self._initAuth()
 
+        # Apply saved advanced mode setting
+        self._loadAdvancedMode()
+
         # Reload stylesheets
         SiGlobal.siui.reloadAllWindowsStyleSheet()
+
+    def setAdvancedMode(self, enabled: bool):
+        """Show or hide the Training and Custom Tracker sidebar buttons with animation."""
+        from PyQt5.QtCore import QVariantAnimation, QEasingCurve
+
+        navigator = self.layerMain().page_view.page_navigator
+        container = navigator.container
+        buttons = navigator.buttons
+        training_btn = buttons[self.training_button_index]
+        custom_tracker_btn = buttons[self.custom_tracker_button_index]
+        help_btn = buttons[self.help_button_index]
+
+        # Stop any in-progress animation
+        if hasattr(self, '_advanced_mode_anim') and self._advanced_mode_anim is not None:
+            self._advanced_mode_anim.stop()
+            self._advanced_mode_anim = None
+
+        if enabled:
+            # Insert into layout before Help button
+            if training_btn not in container.widgets_top and help_btn in container.widgets_top:
+                pos = container.widgets_top.index(help_btn)
+                container.widgets_top.insert(pos, training_btn)
+                container.widgets_top.insert(pos + 1, custom_tracker_btn)
+            for btn in (training_btn, custom_tracker_btn):
+                btn.setFixedHeight(0)
+                btn.show()
+            container.arrangeWidget()
+
+            anim = QVariantAnimation(self)
+            anim.setStartValue(0)
+            anim.setEndValue(40)
+            anim.setDuration(200)
+            anim.setEasingCurve(QEasingCurve.OutCubic)
+
+            def _on_value_show(val):
+                h = int(val)
+                training_btn.setFixedHeight(h)
+                custom_tracker_btn.setFixedHeight(h)
+                container.arrangeWidget()
+
+            def _on_done_show():
+                for b in (training_btn, custom_tracker_btn):
+                    b.setMinimumHeight(0)
+                    b.setMaximumHeight(16777215)
+                    b.resize(40, 40)
+                container.arrangeWidget()
+                self._advanced_mode_anim = None
+
+            anim.valueChanged.connect(_on_value_show)
+            anim.finished.connect(_on_done_show)
+            self._advanced_mode_anim = anim
+            anim.start()
+
+        else:
+            start_h = training_btn.height() if training_btn in container.widgets_top else 40
+
+            anim = QVariantAnimation(self)
+            anim.setStartValue(start_h)
+            anim.setEndValue(0)
+            anim.setDuration(150)
+            anim.setEasingCurve(QEasingCurve.InCubic)
+
+            def _on_value_hide(val):
+                h = int(val)
+                training_btn.setFixedHeight(h)
+                custom_tracker_btn.setFixedHeight(h)
+                container.arrangeWidget()
+
+            def _on_done_hide():
+                for b in (training_btn, custom_tracker_btn):
+                    if b in container.widgets_top:
+                        container.widgets_top.remove(b)
+                    b.hide()
+                    b.setMinimumHeight(0)
+                    b.setMaximumHeight(16777215)
+                    b.resize(40, 40)
+                container.arrangeWidget()
+                self._advanced_mode_anim = None
+
+            anim.valueChanged.connect(_on_value_hide)
+            anim.finished.connect(_on_done_hide)
+            self._advanced_mode_anim = anim
+            anim.start()
+
+    def _loadAdvancedMode(self):
+        """Read app_settings.json and apply advanced mode on startup."""
+        import json as _json
+        app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+        settings_path = os.path.join(app_dir, "data", "app_settings.json")
+        try:
+            if os.path.exists(settings_path):
+                with open(settings_path, "r", encoding="utf-8") as f:
+                    data = _json.load(f)
+                if data.get("advanced_mode", False):
+                    self.setAdvancedMode(True)
+        except Exception:
+            pass
 
     def _initAuth(self):
         """Initialize authentication system."""
@@ -317,7 +448,7 @@ class VisionTrackerApp(SiliconApplication):
         help_btn = SiPushButton(btn_row)
         help_btn.setFixedSize(120, 32)
         help_btn.setText("View Help")
-        help_btn.clicked.connect(lambda: self.layerMain().setPage(4))
+        help_btn.clicked.connect(lambda: self.layerMain().setPage(self.help_page_index))
         help_btn.clicked.connect(msg_box.closeLater)
         # Position button on the right side
         help_btn.move(content_width - 120 - 24, 0)

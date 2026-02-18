@@ -14,7 +14,7 @@ from siui.components import (
 )
 from siui.components.page import SiPage
 from siui.components.button import SiFlatButton, SiPushButtonRefactor
-from siui.components.container import SiTriSectionPanelCard
+from siui.components.container import SiTriSectionFlatCard
 from siui.components.widgets.button import SiSwitch
 from siui.components.widgets.table import SiTableView
 from siui.components.widgets.abstracts.table import ABCSiTabelManager, SiRow
@@ -673,7 +673,7 @@ class AdminPage(SiPage):
     def _createStatsSection(self):
         self.titled_group.addTitle("System Statistics")
 
-        self.stats_card = SiTriSectionPanelCard(self)
+        self.stats_card = SiTriSectionFlatCard(self)
         self.stats_card.setTitle("Overview")
 
         stats_container = SiDenseHContainer(self)
