@@ -15,6 +15,7 @@ from siui.components.widgets.button import SiSwitch
 from siui.components.container import SiTriSectionFlatCard
 from siui.components.progress_bar.progress_bar import SiProgressBar
 from siui.components.chart import SiTrendChart
+from siui.components.slider_ import SiScrollBar
 from siui.core import Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -81,17 +82,6 @@ INPUT_STYLE = """
     QLineEdit:focus { border: 1px solid #D087DF; }
 """
 
-CONSOLE_STYLE = """
-    QTextEdit {
-        background-color: #1a1720;
-        border: 1px solid #3a3540;
-        border-radius: 6px;
-        color: #C8C0CC;
-        padding: 8px;
-        font-family: "Cascadia Code", "Consolas", monospace;
-        font-size: 12px;
-    }
-"""
 
 
 class TrainingPage(SiPage):
@@ -878,6 +868,7 @@ class TrainingPage(SiPage):
         btn_row = SiDenseHContainer(self)
         btn_row.setFixedHeight(40)
         btn_row.setSpacing(8)
+        btn_row.setAlignment(Qt.AlignVCenter)
 
         self.btn_start = SiFlatButton(self)
         self.btn_start.setFixedSize(32, 32)
@@ -952,8 +943,25 @@ class TrainingPage(SiPage):
         # Console log
         self.console = QTextEdit(self)
         self.console.setReadOnly(True)
-        self.console.setFixedHeight(250)
-        self.console.setStyleSheet(CONSOLE_STYLE)
+        self.console.setFixedHeight(300)
+        self.console.setStyleSheet(
+            f"QTextEdit {{"
+            f"  background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']};"
+            f"  color: {SiGlobal.siui.colors['TEXT_B']};"
+            f"  border: none;"
+            f"  border-radius: 8px;"
+            f"  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;"
+            f"  font-size: 12px;"
+            f"  padding: 12px;"
+            f"}}"
+        )
+        self._console_scrollbar = SiScrollBar(self.console)
+        self._console_scrollbar.setOrientation(Qt.Vertical)
+        self._console_scrollbar.setFixedWidth(8)
+        self._console_scrollbar.setStyleSheet(
+            "QScrollBar:vertical { background-color: transparent; border: none; }"
+        )
+        self.console.setVerticalScrollBar(self._console_scrollbar)
         self.titled_group.addWidget(self.console)
 
     # ── Browse Handlers ────────────────────────────────────────────
@@ -1129,10 +1137,31 @@ class TrainingPage(SiPage):
             self._autoAdjustChart(self.map_chart, self._map50_points)
 
     def _onLogOutput(self, line):
-        self.console.append(line.rstrip())
-        # Auto-scroll to bottom
-        scrollbar = self.console.verticalScrollBar()
-        scrollbar.setValue(scrollbar.maximum())
+        from datetime import datetime
+        line = line.rstrip()
+        if not line:
+            return
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        # Detect level from keywords
+        lu = line.upper()
+        if any(k in lu for k in ("ERROR", "EXCEPTION", "TRACEBACK", "RUNTIMEERROR", "FILENOTFOUND")):
+            level, color = "ERROR", "#ff4444"
+        elif any(k in lu for k in ("WARNING", "WARN")):
+            level, color = "WARN", "#ffaa00"
+        elif any(k in lu for k in ("COMPLETED", "FINISHED", "SUCCESS", "DONE")):
+            level, color = "INFO", "#44cc44"
+        else:
+            level, color = "INFO", SiGlobal.siui.colors['TEXT_B']
+        text_color = SiGlobal.siui.colors['TEXT_D']
+        escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        formatted = (
+            f'<span style="color:{text_color}">[{timestamp}]</span> '
+            f'<span style="color:{color}">[{level}]</span> '
+            f'<span style="color:{SiGlobal.siui.colors["TEXT_B"]}">{escaped}</span>'
+        )
+        self.console.append(formatted)
+        sb = self.console.verticalScrollBar()
+        sb.setValue(sb.maximum())
 
     def _onTrainingFinished(self, exit_code):
         self.btn_start.setEnabled(True)
