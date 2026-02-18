@@ -10,6 +10,7 @@ from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel, SiTit
 from siui.components.page import SiPage
 from siui.components.button import SiFlatButton
 from siui.components.combobox.combobox import SiComboBox
+from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
 from siui.components.container import SiTriSectionFlatCard
@@ -161,6 +162,14 @@ class TrainingPage(SiPage):
         self.stats_label.setTextColor(self.getColor(SiColor.TEXT_D))
         self.stats_label.setText("—")
         self.stats_card.addWidget(self.stats_label)
+
+        self.split_selector = SiCapsuleComboBox(self)
+        self.split_selector.setTitle("Split")
+        self.split_selector.addItems(["Train", "Val", "Test"])
+        self.split_selector.setCurrentIndex(0)
+        self.split_selector.currentIndexChanged.connect(self._onSplitSelected)
+        self.stats_card.addWidget(self.split_selector)
+
         self.titled_group.addWidget(self.stats_card)
 
         # Dataset browser
@@ -995,16 +1004,46 @@ class TrainingPage(SiPage):
     def _updateDatasetStats(self):
         info = self.dataset_browser.getDatasetInfo()
         if info:
-            classes = ", ".join(info.get("class_names", []))
-            total = info.get("total_images", 0)
-            self.stats_label.setText(f"{total} images | Classes: {classes}")
-
             # Auto-set num_classes and class names from dataset
             dataset_class_names = info.get("class_names", [])
             nc = len(dataset_class_names)
             if nc > 0:
                 self.num_classes.setValue(nc)
                 self._updateClassNameInputs(nc, dataset_class_names)
+            self._refreshSplitStats()
+
+    def _refreshSplitStats(self):
+        """Update stats_label with image count for the selected split."""
+        idx = self.split_selector.currentIndex()
+        split_names = ["train", "val", "test"]
+        split_name = split_names[idx] if 0 <= idx < len(split_names) else ""
+        splits = self.dataset_browser._splits
+        exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+
+        if split_name in splits:
+            img_dir = splits[split_name]["images_dir"]
+            if os.path.isdir(img_dir):
+                count = sum(1 for f in os.listdir(img_dir)
+                            if os.path.splitext(f)[1].lower() in exts)
+                self.stats_label.setText(f"{split_name.capitalize()}: {count} images")
+                return
+
+        # Fallback: total across all splits
+        total = sum(
+            sum(1 for f in os.listdir(s["images_dir"])
+                if os.path.splitext(f)[1].lower() in exts)
+            for s in splits.values()
+            if os.path.isdir(s.get("images_dir", ""))
+        )
+        if total:
+            self.stats_label.setText(f"Total: {total} images")
+
+    def _onSplitSelected(self, index):
+        """Handle split selection from the stats card split selector."""
+        split_names = ["train", "val", "test"]
+        if 0 <= index < len(split_names):
+            self.dataset_browser._loadSplit(split_names[index])
+            self._refreshSplitStats()
 
     # ── Training Control ───────────────────────────────────────────
 

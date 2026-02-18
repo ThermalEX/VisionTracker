@@ -154,12 +154,6 @@ class DatasetBrowser(QWidget):
         self.class_combo.menu().indexChanged.connect(self._onClassFilterChanged)
         self.top_bar.addWidget(self.class_combo, side="left")
 
-        self.info_label = SiLabel(self)
-        self.info_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
-        self.info_label.setFont(SiFont.getFont(size=11))
-        self.info_label.setTextColor("#918497")
-        self.info_label.setText("")
-        self.top_bar.addWidget(self.info_label, side="right")
 
         layout.addWidget(self.top_bar)
 
@@ -344,9 +338,7 @@ class DatasetBrowser(QWidget):
         self._image_labels = result["image_labels"]
         self._current_index = 0
 
-        # Build stats
-        total_labels = sum(len(v) for v in self._image_labels.values())
-        self.info_label.setText(f"{len(self._images)} images | {total_labels} annotations")
+        # Build stats (no longer shown in info_label; caller reads via getDatasetInfo)
 
         self._applyFilter()
         self._showCurrentImage()
@@ -448,12 +440,7 @@ class DatasetBrowser(QWidget):
             idx = self._filtered_indices[self._current_index]
             img_name = self._images[idx] if idx < len(self._images) else ""
 
-        total_labels = sum(len(v) for v in self._image_labels.values())
-        stats = f"{len(self._images)} images | {total_labels} labels"
-        if img_name:
-            self.info_label.setText(f"{img_name}  |  {stats}")
-        else:
-            self.info_label.setText(stats)
+        pass  # stats shown in stats_card via _updateDatasetStats
 
     # ── Navigation ─────────────────────────────────────────────────
 
