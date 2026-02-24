@@ -220,7 +220,8 @@ class TrackerWorker(QThread):
         """Apply configuration to Config class."""
         Config.FOV_WIDTH = self.config.get('fov_width', 200)
         Config.FOV_HEIGHT = self.config.get('fov_height', 200)
-        Config.IMGSZ = max(Config.FOV_WIDTH, Config.FOV_HEIGHT)
+        _imgsz = max(Config.FOV_WIDTH, Config.FOV_HEIGHT)
+        Config.IMGSZ = max(32, ((_imgsz + 31) // 32) * 32)
 
         Config.SHOW_OVERLAY = self.config.get('show_overlay', True)
         Config.SHOW_BBOX = self.config.get('show_bbox', True)
@@ -244,6 +245,9 @@ class TrackerWorker(QThread):
         Config.PID_COOLDOWN = self.config.get('pid_cooldown', 0.05)
         Config.PID_ERROR_THRESHOLD = self.config.get('pid_error_threshold', 3)
 
+        # Aim point vertical offset (0=top, 50=center, 100=bottom of bbox)
+        Config.AIM_POINT_Y = self.config.get('aim_point_y', 50)
+
         # Crosshair settings
         Config.CROSSHAIR_SHOW = self.config.get('crosshair_show', True)
         Config.CROSSHAIR_LENGTH = self.config.get('crosshair_length', 10)
@@ -254,8 +258,31 @@ class TrackerWorker(QThread):
         Config.CROSSHAIR_DOT_SIZE = self.config.get('crosshair_dot_size', 2)
         Config.OVERLAY_OPACITY = self.config.get('overlay_opacity', 100)
 
-        # Team setting
-        Config.TARGET_TEAM = self.config.get('target_team', 'T')
+        # Target class: int / list of ints / None for all classes
+        target_class_id = self.config.get('target_class_id', None)
+        Config.PREFER_CLASS_IDS = None
+        if target_class_id is None:
+            aim_part = self.config.get('aim_part', None)
+            if aim_part:
+                try:
+                    import json as _json, os as _os
+                    _cfg_path = _os.path.join(
+                        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
+                        'data', 'class_config.json'
+                    )
+                    with open(_cfg_path, 'r') as _f:
+                        _cls = _json.load(_f).get('class_names', [])
+                    if aim_part == 'head_priority':
+                        # All classes enabled; prefer head classes over body
+                        head_ids = [i for i, n in enumerate(_cls) if 'head' in n.lower()]
+                        Config.PREFER_CLASS_IDS = head_ids if head_ids else None
+                    else:
+                        matching = [i for i, n in enumerate(_cls) if aim_part.lower() in n.lower()]
+                        if matching:
+                            target_class_id = matching[0] if len(matching) == 1 else matching
+                except Exception:
+                    pass
+        Config.TARGET_CLASS_ID = target_class_id
 
         # Operation mode: auto_trigger, auto_aim, auto_aim_fire
         operation_mode = self.config.get('operation_mode', 'auto_aim_fire')
@@ -264,7 +291,8 @@ class TrackerWorker(QThread):
         self.log_message.emit(f"Mode: {operation_mode}", "INFO")
 
         self.log_message.emit(f"Configuration applied: {self.config.get('name', 'Unknown')}", "INFO")
-        self.log_message.emit(f"Target team: {Config.TARGET_TEAM}", "INFO")
+        cls_label = str(Config.TARGET_CLASS_ID) if Config.TARGET_CLASS_ID is not None else "All"
+        self.log_message.emit(f"Target class: {cls_label}", "INFO")
 
     def _init_components(self):
         """Initialize all tracking components."""
@@ -446,7 +474,8 @@ class TrackerWorker(QThread):
                 if aim_active:
                     target, _ = find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi,
                                                   priority=Config.TARGET_PRIORITY,
-                                                  target_team=Config.TARGET_TEAM)
+                                                  target_class_id=Config.TARGET_CLASS_ID,
+                                                  prefer_class_ids=Config.PREFER_CLASS_IDS)
 
                     if target:
                         head_x, head_y, head_r, head_cls, head_conf, head_bbox = target
@@ -626,8 +655,8 @@ class TrackerWorker(QThread):
             y2 = min(h, cy + Config.FOV_HEIGHT // 2)
 
             boxes = self._detector.detect(frame, roi=(x1, y1, x2, y2))
-            # Use 'ALL' to target both teams during calibration
-            target, _ = find_nearest_head(boxes, cx, cy, x1, y1, target_team='ALL')
+            # Use None to target all classes during calibration
+            target, _ = find_nearest_head(boxes, cx, cy, x1, y1, target_class_id=None)
 
             if not target:
                 self.log_message.emit("No target detected", "WARN")
@@ -675,7 +704,7 @@ class TrackerWorker(QThread):
 
             # Detect new position
             boxes = self._detector.detect(frame, roi=(x1, y1, x2, y2))
-            new_target, _ = find_nearest_head(boxes, cx, cy, x1, y1, target_team='ALL')
+            new_target, _ = find_nearest_head(boxes, cx, cy, x1, y1, target_class_id=None)
 
             if not new_target:
                 self.log_message.emit("Lost target after move", "WARN")
@@ -809,10 +838,11 @@ class TrackerManager(QObject):
         """Check if tracking is paused."""
         return self._worker is not None and self._worker.is_paused()
 
-    def set_target_team(self, team: str):
-        """Set target team during runtime."""
-        Config.TARGET_TEAM = team
-        self.log_message.emit(f"Target team changed to: {team}", "INFO")
+    def set_target_class(self, class_id):
+        """Set target class ID during runtime (int or None for all)."""
+        Config.TARGET_CLASS_ID = class_id
+        label = str(class_id) if class_id is not None else "All"
+        self.log_message.emit(f"Target class changed to: {label}", "INFO")
 
     # === Hotkey configuration interface ===
 

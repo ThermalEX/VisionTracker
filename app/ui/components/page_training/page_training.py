@@ -2,6 +2,7 @@
 
 import json
 import os
+import re
 from PyQt5.QtCore import Qt, QPointF, QRectF, QTimer
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import QFileDialog, QGridLayout, QLineEdit, QTextEdit, QWidget
@@ -10,13 +11,11 @@ from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel, SiTit
 from siui.components.page import SiPage
 from siui.components.button import SiFlatButton
 from siui.components.combobox.combobox import SiComboBox
-from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
 from siui.components.container import SiTriSectionFlatCard
 from siui.components.progress_bar.progress_bar import SiProgressBar
 from siui.components.chart import SiTrendChart
-from siui.components.slider_ import SiScrollBar
 from siui.core import Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -69,6 +68,10 @@ DEFAULTS = {
     "save_dir": "runs/custom_train",
     "exp_name": "exp",
 }
+
+_ANSI_RE = re.compile(r'\x1b(?:\[[0-?]*[ -/]*[@-~]|[@-_])')
+# Match tqdm-style progress lines: "something: 40% ─── 2/5 ..."
+_TQDM_RE = re.compile(r':\s+(\d+)%[|\s]')
 
 INPUT_STYLE = """
     QLineEdit {
@@ -156,18 +159,13 @@ class TrainingPage(SiPage):
         self.stats_card.setTitle("Statistics", "Dataset overview after loading")
         self.stats_card.load(SiGlobal.siui.iconpack.get("ic_fluent_data_pie_filled"))
 
-        self.stats_label = SiLabel(self)
-        self.stats_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
-        self.stats_label.setFont(SiFont.getFont(size=12))
-        self.stats_label.setTextColor(self.getColor(SiColor.TEXT_D))
-        self.stats_label.setText("—")
-        self.stats_card.addWidget(self.stats_label)
-
-        self.split_selector = SiCapsuleComboBox(self)
-        self.split_selector.setTitle("Split")
-        self.split_selector.addItems(["Train", "Val", "Test"])
-        self.split_selector.setCurrentIndex(0)
-        self.split_selector.currentIndexChanged.connect(self._onSplitSelected)
+        self.split_selector = SiComboBox(self)
+        self.split_selector.resize(100, 32)
+        self.split_selector.menu().addOption("Train", value="train")
+        self.split_selector.menu().addOption("Val", value="val")
+        self.split_selector.menu().addOption("Test", value="test")
+        self.split_selector.menu().setIndex(0)
+        self.split_selector.menu().indexChanged.connect(self._onSplitSelected)
         self.stats_card.addWidget(self.split_selector)
 
         self.titled_group.addWidget(self.stats_card)
@@ -953,24 +951,25 @@ class TrainingPage(SiPage):
         self.console = QTextEdit(self)
         self.console.setReadOnly(True)
         self.console.setFixedHeight(300)
+        bg = SiGlobal.siui.colors['INTERFACE_BG_A']
+        fg = SiGlobal.siui.colors['TEXT_B']
         self.console.setStyleSheet(
             f"QTextEdit {{"
-            f"  background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']};"
-            f"  color: {SiGlobal.siui.colors['TEXT_B']};"
-            f"  border: none;"
+            f"  background-color: {bg}; color: {fg}; border: none;"
             f"  border-radius: 8px;"
             f"  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;"
-            f"  font-size: 12px;"
-            f"  padding: 12px;"
+            f"  font-size: 12px; padding: 12px;"
             f"}}"
+            f"QScrollBar:vertical {{"
+            f"  background: transparent; width: 6px; margin: 4px 2px;"
+            f"}}"
+            f"QScrollBar::handle:vertical {{"
+            f"  background: rgba(255,255,255,0.15); border-radius: 3px; min-height: 20px;"
+            f"}}"
+            f"QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,0.3); }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
+            f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}"
         )
-        self._console_scrollbar = SiScrollBar(self.console)
-        self._console_scrollbar.setOrientation(Qt.Vertical)
-        self._console_scrollbar.setFixedWidth(8)
-        self._console_scrollbar.setStyleSheet(
-            "QScrollBar:vertical { background-color: transparent; border: none; }"
-        )
-        self.console.setVerticalScrollBar(self._console_scrollbar)
         self.titled_group.addWidget(self.console)
 
     # ── Browse Handlers ────────────────────────────────────────────
@@ -1012,38 +1011,44 @@ class TrainingPage(SiPage):
                 self._updateClassNameInputs(nc, dataset_class_names)
             self._refreshSplitStats()
 
-    def _refreshSplitStats(self):
-        """Update stats_label with image count for the selected split."""
-        idx = self.split_selector.currentIndex()
-        split_names = ["train", "val", "test"]
-        split_name = split_names[idx] if 0 <= idx < len(split_names) else ""
+    def _refreshSplitStats(self, split_name=None):
+        """Update stats_card subtitle with image count for the given split."""
+        if split_name is None:
+            idx = self.split_selector.menu().index() or 0
+            split_names = ["train", "val", "test"]
+            split_name = split_names[idx] if 0 <= idx < len(split_names) else ""
         splits = self.dataset_browser._splits
         exts = {'.jpg', '.jpeg', '.png', '.bmp', '.tiff', '.webp'}
+
+        def _count_images(directory):
+            count = 0
+            for _, _, files in os.walk(directory):
+                count += sum(1 for f in files if os.path.splitext(f)[1].lower() in exts)
+            return count
 
         if split_name in splits:
             img_dir = splits[split_name]["images_dir"]
             if os.path.isdir(img_dir):
-                count = sum(1 for f in os.listdir(img_dir)
-                            if os.path.splitext(f)[1].lower() in exts)
-                self.stats_label.setText(f"{split_name.capitalize()}: {count} images")
+                count = _count_images(img_dir)
+                self.stats_card.setTitle("Statistics", f"{count:,} images")
                 return
 
         # Fallback: total across all splits
         total = sum(
-            sum(1 for f in os.listdir(s["images_dir"])
-                if os.path.splitext(f)[1].lower() in exts)
+            _count_images(s["images_dir"])
             for s in splits.values()
             if os.path.isdir(s.get("images_dir", ""))
         )
         if total:
-            self.stats_label.setText(f"Total: {total} images")
+            self.stats_card.setTitle("Statistics", f"{total:,} images total")
 
     def _onSplitSelected(self, index):
         """Handle split selection from the stats card split selector."""
         split_names = ["train", "val", "test"]
-        if 0 <= index < len(split_names):
-            self.dataset_browser._loadSplit(split_names[index])
-            self._refreshSplitStats()
+        if index is not None and 0 <= index < len(split_names):
+            split_name = split_names[index]
+            self.dataset_browser._loadSplit(split_name)
+            self._refreshSplitStats(split_name)
 
     # ── Training Control ───────────────────────────────────────────
 
@@ -1179,8 +1184,12 @@ class TrainingPage(SiPage):
 
     def _onLogOutput(self, line):
         from datetime import datetime
-        line = line.rstrip()
+        line = _ANSI_RE.sub('', line).rstrip()
         if not line:
+            return
+        # Skip intermediate tqdm progress updates (e.g. 40%, 60%, 80%); keep 100%
+        m = _TQDM_RE.search(line)
+        if m and int(m.group(1)) < 100:
             return
         timestamp = datetime.now().strftime("%H:%M:%S")
         lu = line.upper()

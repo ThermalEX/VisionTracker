@@ -98,7 +98,14 @@ class TrainingManager(QObject):
         data = self._process.readAllStandardOutput()
         text = bytes(data).decode('utf-8', errors='replace')
 
-        for line in text.splitlines():
+        for line in text.split('\n'):
+            # Progress bars use \r to overwrite; keep only the final segment
+            if '\r' in line:
+                segments = [s for s in line.split('\r') if s.strip()]
+                if not segments:
+                    continue
+                line = segments[-1]
+
             stripped = line.strip()
             if not stripped:
                 continue

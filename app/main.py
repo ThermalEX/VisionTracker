@@ -1,6 +1,3 @@
-"""Vision Tracker - Main Application Entry Point"""
-
-# Import torch before PyQt5 to avoid DLL conflicts
 import torch
 
 import sys
@@ -10,7 +7,6 @@ from ui import VisionTrackerApp
 
 
 def main():
-    """Main entry point for the application."""
     app = QApplication(sys.argv)
 
     window = VisionTrackerApp()

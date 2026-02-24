@@ -15,6 +15,7 @@ DEFAULT_CONFIG = {
     # FOV Settings
     "fov_width": 200,
     "fov_height": 200,
+    "aim_point_y": 50,
 
     # Display Settings
     "show_overlay": True,

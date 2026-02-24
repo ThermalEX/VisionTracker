@@ -15,7 +15,12 @@ import torch
 from ultralytics import YOLO
 import os
 
-def export_to_tensorrt(model_path, imgsz=640, half=True):
+# 脚本所在目录的根路径（HonoursStageProject/）
+_SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
+_PROJECT_ROOT = os.path.join(_SCRIPT_DIR, "..", "..")
+_MODELS_DIR = os.path.join(_PROJECT_ROOT, "app", "models")
+
+def export_to_tensorrt(model_path, imgsz=384, half=True):
     """
     导出 YOLO 模型为 TensorRT 引擎
 
@@ -57,7 +62,7 @@ def export_to_tensorrt(model_path, imgsz=640, half=True):
             imgsz=imgsz,
         )
 
-        # 默认输出文件名（ultralytics 自动生成）
+        # 默认输出文件名（ultralytics 自动生成，与 .pt 同目录）
         default_engine_path = model_path.replace('.pt', '.engine')
 
         # 自定义文件名：添加尺寸标识
@@ -88,30 +93,46 @@ def export_to_tensorrt(model_path, imgsz=640, half=True):
         print("\n尝试安装 TensorRT: pip install tensorrt")
 
 if __name__ == '__main__':
-    # 配置
-    MODEL_PATH = "models/best 12.23.pt"
-    EXPORT_SIZES = [200]  # 可以导出多个尺寸，如 [320, 384, 480, 640]
-
     print("=" * 60)
     print("TensorRT 引擎导出工具")
     print("=" * 60)
 
-    # 检查模型是否存在
+    # 列出可用模型
+    available = [f for f in os.listdir(_MODELS_DIR) if f.endswith('.pt')]
+    print("\n可用模型:")
+    for i, name in enumerate(available):
+        print(f"  [{i}] {name}")
+
+    model_input = input("\n输入模型序号或文件名 (默认 0): ").strip()
+    if model_input == "":
+        model_name = available[0]
+    elif model_input.isdigit():
+        model_name = available[int(model_input)]
+    else:
+        model_name = model_input
+    MODEL_PATH = os.path.join(_MODELS_DIR, model_name)
+
     if not os.path.exists(MODEL_PATH):
         print(f"错误: 找不到模型文件 {MODEL_PATH}")
-        print(f"当前目录: {os.getcwd()}")
-        print("请确保模型文件在当前目录")
+        exit(1)
+
+    sizes_input = input("输入导出尺寸（多个用空格分隔，默认 200）: ").strip()
+    if sizes_input == "":
+        EXPORT_SIZES = [200]
     else:
-        print(f"\n将导出以下尺寸的引擎: {EXPORT_SIZES}")
-        print("提示: 修改 EXPORT_SIZES 可自定义导出尺寸\n")
+        EXPORT_SIZES = [int(s) for s in sizes_input.split()]
 
-        for size in EXPORT_SIZES:
-            print(f"\n{'='*60}")
-            print(f"导出 {size}x{size} 引擎")
-            print(f"{'='*60}")
-            export_to_tensorrt(MODEL_PATH, imgsz=size, half=True)
-            print()
+    print(f"\n模型: {MODEL_PATH}")
+    print(f"尺寸: {EXPORT_SIZES}")
+    print(f"精度: FP16\n")
 
-        print("\n" + "=" * 60)
-        print("全部导出完成！")
-        print("=" * 60)
+    for size in EXPORT_SIZES:
+        print(f"\n{'='*60}")
+        print(f"导出 {size}x{size} 引擎")
+        print(f"{'='*60}")
+        export_to_tensorrt(MODEL_PATH, imgsz=size, half=True)
+        print()
+
+    print("\n" + "=" * 60)
+    print("全部导出完成！")
+    print("=" * 60)

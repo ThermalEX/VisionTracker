@@ -81,12 +81,17 @@ class OverlayProcess:
             # Set color key + alpha for transparency (black = transparent, alpha = opacity)
             win32gui.SetLayeredWindowAttributes(hwnd, 0, 255, win32con.LWA_COLORKEY | win32con.LWA_ALPHA)
 
-        last_topmost = time.time()
-
         while running_event.is_set():
             try:
                 data = overlay_queue.get(timeout=0.05)
             except:
+                # Re-assert topmost while idle so the window doesn't get buried
+                if hwnd:
+                    try:
+                        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+                    except Exception:
+                        pass
                 cv2.waitKey(1)
                 continue
 
@@ -118,20 +123,13 @@ class OverlayProcess:
                 except Exception:
                     pass
 
-            # Draw detection boxes if enabled (all targets, semi-transparent thin lines)
+            # Draw detection boxes if enabled
             if show_bbox and boxes:
                 for box in boxes:
                     bbox = box.get('bbox')
                     if bbox:
                         bx1, by1, bx2, by2 = bbox
-                        cls = box.get('cls', 0)
-                        # Class mapping: 0=ct_head, 1=ct_body, 2=t_head, 3=t_body
-                        # CT (0,1) = blue, T (2,3) = red (lower value = more transparent)
-                        if cls in [0, 1]:
-                            box_color = (100, 0, 0)  # Blue (BGR)
-                        else:
-                            box_color = (0, 0, 100)  # Red (BGR)
-                        cv2.rectangle(overlay, (bx1, by1), (bx2, by2), box_color, 1)
+                        cv2.rectangle(overlay, (bx1, by1), (bx2, by2), (0, 100, 0), 1)
 
             # Draw ROI corners
             corner_len = 30
@@ -231,18 +229,15 @@ class OverlayProcess:
                 cv2.putText(overlay, f"Conf:{conf:.2f} Dist:{dist:.0f}px", (10, 100),
                            cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
 
+            # Re-assert topmost every frame so full-screen apps can't bury the overlay
+            if hwnd:
+                try:
+                    win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
+                        win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
+                except Exception:
+                    pass
+
             cv2.imshow(window_name, overlay)
-
-            # Keep window on top
-            if time.time() - last_topmost > 3.0:
-                if hwnd:
-                    try:
-                        win32gui.SetWindowPos(hwnd, win32con.HWND_TOPMOST, 0, 0, 0, 0,
-                            win32con.SWP_NOMOVE | win32con.SWP_NOSIZE | win32con.SWP_NOACTIVATE)
-                    except:
-                        pass
-                last_topmost = time.time()
-
             cv2.waitKey(1)
 
         cv2.destroyAllWindows()

@@ -1,0 +1,9 @@
+{
+  "num_classes": 4,
+  "class_names": [
+    "ct_head",
+    "ct_body",
+    "t_head",
+    "t_body"
+  ]
+}

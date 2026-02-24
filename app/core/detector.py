@@ -23,6 +23,13 @@ class Detector:
     def load_model(self, model_path: str):
         """Load a YOLO model from path."""
         if model_path.endswith('.engine'):
+            try:
+                import tensorrt  # noqa: F401
+            except ImportError:
+                raise ImportError(
+                    "TensorRT is not installed. Cannot load .engine model. "
+                    "Please use a .pt model, or install TensorRT."
+                )
             self.model = YOLO(model_path)
             self.using_tensorrt = True
         else:
@@ -93,7 +100,7 @@ class Detector:
         return None, None
 
 
-def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='nearest', target_team='T'):
+def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='nearest', target_class_id=None, prefer_class_ids=None):
     """
     Find the nearest head from detection boxes.
 
@@ -102,25 +109,20 @@ def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='neare
         center_x, center_y: Screen center coordinates
         x1_roi, y1_roi: ROI offset
         priority: 'nearest' or 'confidence'
-        target_team: 'T' to target T heads (class 2), 'CT' to target CT heads (class 0)
+        target_class_id: int / list of ints / None for all classes
+        prefer_class_ids: if set, prefer targets with these class IDs (head priority mode)
 
     Returns:
         (target_info, all_heads) or (None, [])
     """
     heads = []
 
-    # Class mapping: 0 = ct_head, 2 = t_head
-    if target_team == 'CT':
-        target_classes = [0]  # Target CT heads
-    elif target_team == 'T':
-        target_classes = [2]  # Target T heads
-    else:
-        target_classes = [0, 2]  # Target all heads
-
     for box in boxes:
         cls = int(box.cls[0])
-        # Filter by target team
-        if cls not in target_classes:
+        # Filter by target class ID; None means accept all; list means accept any in list
+        if target_class_id is not None:
+            ids = target_class_id if isinstance(target_class_id, (list, tuple, set)) else (target_class_id,)
+        if target_class_id is not None and cls not in ids:
             continue
 
         bx1, by1, bx2, by2 = map(int, box.xyxy[0])
@@ -133,7 +135,8 @@ def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='neare
         real_y2 = by2 + y1_roi
 
         head_cx = (real_x1 + real_x2) // 2
-        head_cy = (real_y1 + real_y2) // 2
+        aim_y_frac = getattr(Config, 'AIM_POINT_Y', 50) / 100.0
+        head_cy = real_y1 + int((real_y2 - real_y1) * aim_y_frac)
         head_r = min(real_x2 - real_x1, real_y2 - real_y1) // 2
 
         dist = math.sqrt((head_cx - center_x) ** 2 + (head_cy - center_y) ** 2)
@@ -157,7 +160,12 @@ def find_nearest_head(boxes, center_x, center_y, x1_roi, y1_roi, priority='neare
     else:
         heads.sort(key=lambda h: -h['conf'])
 
-    best = heads[0]
+    # Head priority mode: prefer preferred class IDs; fall back to others if none found
+    if prefer_class_ids:
+        preferred = [h for h in heads if h['cls'] in prefer_class_ids]
+        best = preferred[0] if preferred else heads[0]
+    else:
+        best = heads[0]
     return (best['cx'], best['cy'], best['r'], best['cls'], best['conf'], best['bbox']), heads
 
 

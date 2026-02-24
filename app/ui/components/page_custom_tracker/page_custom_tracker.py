@@ -1,15 +1,13 @@
 """Vision Tracker - Custom Tracker Page"""
 
 import glob
-import json
 import os
 
 from PyQt5.QtCore import Qt
 from PyQt5.QtGui import QColor
 
 from siui.components import SiDenseHContainer, SiLabel, SiTitledWidgetGroup, SiOptionCardLinear
-from siui.components.button import SiFlatButton, SiPushButtonRefactor
-from siui.components.combobox.combobox import SiComboBox
+from siui.components.button import SiFlatButton, SiCapsuleButton
 from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.container import SiTriSectionFlatCard
 from siui.components.page import SiPage
@@ -35,9 +33,8 @@ class CustomTrackerPage(SiPage):
         self._config_manager = ConfigManager()
         self._model_files = []
 
-        # Locate app/data/ relative to this file (4 levels up to app/)
+        # Locate app/ relative to this file (4 levels up)
         app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
-        self._class_config_path = os.path.join(app_dir, "data", "class_config.json")
         self._system_models_dir = os.path.join(app_dir, "models", "system")
         self._user_models_dir = os.path.join(app_dir, "models", "user")
 
@@ -48,6 +45,7 @@ class CustomTrackerPage(SiPage):
         self._createControlCard()
         self._createFovSection()
         self._createDisplaySection()
+        self._createCrosshairSection()
         self._createSnapSection()
         self._createPidSection()
 
@@ -89,6 +87,7 @@ class CustomTrackerPage(SiPage):
         self.model_combo._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
         self.model_combo._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
         self._populateModelCombo()
+        self.model_combo.currentIndexChanged.connect(self._onModelSelected)
         model_row.addWidget(self.model_combo, side="left")
 
         self.btn_refresh_models = SiFlatButton(self)
@@ -100,7 +99,36 @@ class CustomTrackerPage(SiPage):
 
         control_card.body().addWidget(model_row)
 
-        # --- Row 2: Target class + Window ---
+        # --- Row 2: Operation Mode ---
+        mode_row = SiDenseHContainer(self)
+        mode_row.setFixedHeight(40)
+        mode_row.setSpacing(8)
+        mode_row.setAlignment(Qt.AlignVCenter)
+
+        mode_label = SiLabel(self)
+        mode_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        mode_label.setFont(SiFont.getFont(size=13))
+        mode_label.setTextColor(self.getColor(SiColor.TEXT_D))
+        mode_label.setText("Mode")
+        mode_row.addWidget(mode_label, side="left")
+        mode_row.addPlaceholder(4, side="left")
+
+        self._mode_values = ["auto_trigger", "auto_aim", "auto_aim_fire"]
+        self.mode_combo = SiCapsuleComboBox(self)
+        self.mode_combo.setFixedSize(240, 32)
+        self.mode_combo.setTitle("Mode")
+        self.mode_combo.setEditable(False)
+        self.mode_combo._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
+        self.mode_combo._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
+        self.mode_combo.addItem("Auto Trigger")
+        self.mode_combo.addItem("Auto Aim")
+        self.mode_combo.addItem("Auto Aim + Fire")
+        self.mode_combo.setCurrentIndex(1)  # Default: Auto Aim
+        mode_row.addWidget(self.mode_combo, side="left")
+
+        control_card.body().addWidget(mode_row)
+
+        # --- Row 3: Target class + Window ---
         target_row = SiDenseHContainer(self)
         target_row.setFixedHeight(40)
         target_row.setSpacing(8)
@@ -114,9 +142,14 @@ class CustomTrackerPage(SiPage):
         target_row.addWidget(target_label, side="left")
         target_row.addPlaceholder(4, side="left")
 
-        self.target_combo = SiComboBox(self)
-        self.target_combo.resize(140, 32)
-        self._loadClassConfig()
+        self._target_class_values = []  # parallel list of class IDs matching combo items
+        self.target_combo = SiCapsuleComboBox(self)
+        self.target_combo.setFixedSize(240, 32)
+        self.target_combo.setTitle("Target")
+        self.target_combo.setEditable(False)
+        self.target_combo._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
+        self.target_combo._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
+        self._updateTargetCombo({})  # Start with only "All Classes"
         target_row.addWidget(self.target_combo, side="left")
         target_row.addPlaceholder(20, side="left")
 
@@ -146,36 +179,46 @@ class CustomTrackerPage(SiPage):
 
         control_card.body().addWidget(target_row)
 
-        # --- Row 3: Start / Pause / Stop + status ---
+        # --- Row 3: Start / Pause / Stop + Save ---
         btn_row = SiDenseHContainer(self)
-        btn_row.setFixedHeight(44)
+        btn_row.setFixedHeight(48)
         btn_row.setSpacing(8)
         btn_row.setAlignment(Qt.AlignVCenter)
 
-        self.btn_start = SiPushButtonRefactor(self)
-        self.btn_start.setText("Start")
-        self.btn_start.setFixedSize(90, 36)
+        self.btn_start = SiCapsuleButton(self)
+        self.btn_start.setFixedSize(120, 40)
+        self.btn_start.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_play_filled"))
+        self.btn_start.setValue("Start")
+        self.btn_start.setThemeColor(SiCapsuleButton.Theme.Green)
+        self.btn_start.setCheckable(True)
         self.btn_start.clicked.connect(self._startTracking)
         btn_row.addWidget(self.btn_start, side="left")
 
-        self.btn_pause = SiPushButtonRefactor(self)
-        self.btn_pause.setText("Pause")
-        self.btn_pause.setFixedSize(90, 36)
+        self.btn_pause = SiCapsuleButton(self)
+        self.btn_pause.setFixedSize(120, 40)
+        self.btn_pause.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_pause_filled"))
+        self.btn_pause.setValue("Pause")
+        self.btn_pause.setThemeColor(SiCapsuleButton.Theme.Yellow)
+        self.btn_pause.setCheckable(True)
         self.btn_pause.clicked.connect(self._pauseTracking)
         btn_row.addWidget(self.btn_pause, side="left")
 
-        self.btn_stop = SiPushButtonRefactor(self)
-        self.btn_stop.setText("Stop")
-        self.btn_stop.setFixedSize(90, 36)
+        self.btn_stop = SiCapsuleButton(self)
+        self.btn_stop.setFixedSize(120, 40)
+        self.btn_stop.setIcon(SiGlobal.siui.iconpack.get("ic_fluent_stop_filled"))
+        self.btn_stop.setValue("Stop")
+        self.btn_stop.setThemeColor(SiCapsuleButton.Theme.Red)
+        self.btn_stop.setCheckable(True)
+        self.btn_stop.setChecked(True)
         self.btn_stop.clicked.connect(self._stopTracking)
         btn_row.addWidget(self.btn_stop, side="left")
 
-        self.status_label = SiLabel(self)
-        self.status_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
-        self.status_label.setFont(SiFont.getFont(size=12))
-        self.status_label.setTextColor(self.getColor(SiColor.TEXT_D))
-        self.status_label.setText("Idle")
-        btn_row.addWidget(self.status_label, side="left")
+        self.btn_save = SiFlatButton(self)
+        self.btn_save.setFixedSize(28, 28)
+        self.btn_save.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_save_filled"))
+        self.btn_save.setToolTip("Save settings")
+        self.btn_save.clicked.connect(self._saveConfig)
+        btn_row.addWidget(self.btn_save, side="left")
 
         control_card.body().addWidget(btn_row)
         control_card.adjustSize()
@@ -213,6 +256,16 @@ class CustomTrackerPage(SiPage):
         self.fov_height.setValue(200)
         fov_row.addWidget(self.fov_height, side="left")
 
+        self.aim_point_y = SiSliderSpinBox(self)
+        self.aim_point_y.setTitle("Aim Height (%)")
+        self.aim_point_y.setHint("Vertical aim point within bbox: 0=top, 50=center, 100=bottom")
+        self.aim_point_y.resize(200, 84)
+        self.aim_point_y.setMinimum(0)
+        self.aim_point_y.setMaximum(100)
+        self.aim_point_y.setSingleStep(5)
+        self.aim_point_y.setValue(50)
+        fov_row.addWidget(self.aim_point_y, side="left")
+
         fov_card.body().addWidget(fov_row)
         fov_card.adjustSize()
         self.titled_group.addWidget(fov_card)
@@ -249,6 +302,93 @@ class CustomTrackerPage(SiPage):
         self.show_bbox.setChecked(True)
         self.bbox_card.addWidget(self.show_bbox)
         self.titled_group.addWidget(self.bbox_card)
+
+    # ── Crosshair Settings ─────────────────────────────────────────
+
+    def _createCrosshairSection(self):
+        self.titled_group.addTitle("Crosshair Settings")
+
+        self.crosshair_show_card = SiOptionCardLinear(self)
+        self.crosshair_show_card.setTitle("Show Crosshair", "Display a crosshair on the overlay")
+        self.crosshair_show_card.load(SiGlobal.siui.iconpack.get("ic_fluent_target_regular"))
+        self.crosshair_show = SiSwitch(self)
+        self.crosshair_show.setChecked(True)
+        self.crosshair_show_card.addWidget(self.crosshair_show)
+        self.titled_group.addWidget(self.crosshair_show_card)
+
+        self.crosshair_dot_card = SiOptionCardLinear(self)
+        self.crosshair_dot_card.setTitle("Center Dot", "Show a dot at the center of the crosshair")
+        self.crosshair_dot_card.load(SiGlobal.siui.iconpack.get("ic_fluent_circle_small_filled"))
+        self.crosshair_center_dot = SiSwitch(self)
+        self.crosshair_center_dot.setChecked(True)
+        self.crosshair_dot_card.addWidget(self.crosshair_center_dot)
+        self.titled_group.addWidget(self.crosshair_dot_card)
+
+        self.crosshair_color_card = SiOptionCardLinear(self)
+        self.crosshair_color_card.setTitle("Crosshair Color", "Color of the crosshair lines")
+        self.crosshair_color_card.load(SiGlobal.siui.iconpack.get("ic_fluent_color_regular"))
+        self.crosshair_color = SiCapsuleComboBox(self)
+        self.crosshair_color.setFixedSize(160, 32)
+        self.crosshair_color.setTitle("Color")
+        self.crosshair_color.setEditable(False)
+        self.crosshair_color._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
+        self.crosshair_color._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
+        for color_name in ["green", "red", "yellow", "cyan", "white", "magenta"]:
+            self.crosshair_color.addItem(color_name)
+        self.crosshair_color.setCurrentIndex(0)
+        self.crosshair_color_card.addWidget(self.crosshair_color)
+        self.titled_group.addWidget(self.crosshair_color_card)
+
+        ch_card = SiTriSectionFlatCard(self)
+        ch_card.setTitle("Crosshair Parameters")
+
+        ch_row = SiDenseHContainer(self)
+        ch_row.setSpacing(24)
+        ch_row.setFixedHeight(90)
+
+        self.crosshair_length = SiSliderSpinBox(self)
+        self.crosshair_length.setTitle("Length (px)")
+        self.crosshair_length.setHint("Length of each crosshair line")
+        self.crosshair_length.resize(180, 84)
+        self.crosshair_length.setMinimum(0)
+        self.crosshair_length.setMaximum(50)
+        self.crosshair_length.setSingleStep(1)
+        self.crosshair_length.setValue(10)
+        ch_row.addWidget(self.crosshair_length, side="left")
+
+        self.crosshair_thickness = SiSliderSpinBox(self)
+        self.crosshair_thickness.setTitle("Thickness (px)")
+        self.crosshair_thickness.setHint("Thickness of crosshair lines")
+        self.crosshair_thickness.resize(180, 84)
+        self.crosshair_thickness.setMinimum(1)
+        self.crosshair_thickness.setMaximum(10)
+        self.crosshair_thickness.setSingleStep(1)
+        self.crosshair_thickness.setValue(2)
+        ch_row.addWidget(self.crosshair_thickness, side="left")
+
+        self.crosshair_gap = SiSliderSpinBox(self)
+        self.crosshair_gap.setTitle("Gap (px)")
+        self.crosshair_gap.setHint("Gap from center point")
+        self.crosshair_gap.resize(180, 84)
+        self.crosshair_gap.setMinimum(0)
+        self.crosshair_gap.setMaximum(20)
+        self.crosshair_gap.setSingleStep(1)
+        self.crosshair_gap.setValue(4)
+        ch_row.addWidget(self.crosshair_gap, side="left")
+
+        self.crosshair_dot_size = SiSliderSpinBox(self)
+        self.crosshair_dot_size.setTitle("Dot Size (px)")
+        self.crosshair_dot_size.setHint("Radius of center dot")
+        self.crosshair_dot_size.resize(180, 84)
+        self.crosshair_dot_size.setMinimum(1)
+        self.crosshair_dot_size.setMaximum(10)
+        self.crosshair_dot_size.setSingleStep(1)
+        self.crosshair_dot_size.setValue(2)
+        ch_row.addWidget(self.crosshair_dot_size, side="left")
+
+        ch_card.body().addWidget(ch_row)
+        ch_card.adjustSize()
+        self.titled_group.addWidget(ch_card)
 
     # ── Snap Settings ──────────────────────────────────────────────
 
@@ -433,29 +573,43 @@ class CustomTrackerPage(SiPage):
         self._scanModels()
         self._populateModelCombo(preserve_selection=current)
 
-    def _loadClassConfig(self):
-        menu = self.target_combo.menu()
-        # Clear existing options by removing widgets from body and resetting list
-        for opt in list(getattr(menu, 'options_', [])):
-            menu.body().layout().removeWidget(opt)
-            opt.deleteLater()
-        if hasattr(menu, 'options_'):
-            menu.options_.clear()
+    def _onModelSelected(self, idx):
+        """Called when model selection changes; reload class names into target combo."""
+        if idx < 0 or idx >= len(self._model_files):
+            self._updateTargetCombo({})
+            return
+        item = self._model_files[idx]
+        if item.get('header') or not item.get('value'):
+            self._updateTargetCombo({})
+            return
+        names = self._readModelClassNames(item['value'])
+        self._updateTargetCombo(names)
 
+    def _readModelClassNames(self, model_path: str) -> dict:
+        """Read class names dict {id: name} from a YOLO .pt model file."""
+        if not model_path or not os.path.exists(model_path):
+            return {}
+        if not model_path.endswith('.pt'):
+            return {}
         try:
-            if os.path.exists(self._class_config_path):
-                with open(self._class_config_path, "r", encoding="utf-8") as f:
-                    data = json.load(f)
-                names = data.get("class_names", [])
-                if names:
-                    for name in names:
-                        menu.addOption(name, value=name)
-                    menu.setIndex(0)
-                    return
+            import torch
+            ckpt = torch.load(model_path, map_location='cpu', weights_only=False)
+            model_obj = ckpt.get('model') or ckpt.get('ema')
+            if model_obj is not None and hasattr(model_obj, 'names'):
+                return dict(model_obj.names)
         except Exception:
             pass
-        menu.addOption("All targets", value="all")
-        menu.setIndex(0)
+        return {}
+
+    def _updateTargetCombo(self, names: dict):
+        """Repopulate target combo: 'All Classes' + one item per class ID."""
+        self.target_combo.clear()
+        self._target_class_values = [None]  # index 0 → All Classes
+        self.target_combo.addItem("All Classes")
+        for class_id in sorted(names.keys()):
+            self.target_combo.addItem(f"{class_id}: {names[class_id]}")
+            self._target_class_values.append(class_id)
+        self.target_combo.setCurrentIndex(0)
 
     def _loadWindowList(self):
         current = self.window_combo.currentText()
@@ -478,11 +632,23 @@ class CustomTrackerPage(SiPage):
                 if configs:
                     config = self._config_manager.load_config(configs[0])
             if config:
+                mode = config.get("operation_mode", "auto_aim")
+                mode_idx = self._mode_values.index(mode) if mode in self._mode_values else 1
+                self.mode_combo.setCurrentIndex(mode_idx)
                 self.fov_width.setValue(config.get("fov_width", 200))
                 self.fov_height.setValue(config.get("fov_height", 200))
+                self.aim_point_y.setValue(config.get("aim_point_y", 50))
                 self.show_overlay.setChecked(config.get("show_overlay", True))
                 self.show_bbox.setChecked(config.get("show_bbox", True))
                 self.overlay_opacity.setValue(config.get("overlay_opacity", 100))
+                self.crosshair_show.setChecked(config.get("crosshair_show", True))
+                self.crosshair_center_dot.setChecked(config.get("crosshair_center_dot", True))
+                color_idx = self.crosshair_color.findText(config.get("crosshair_color", "green"))
+                self.crosshair_color.setCurrentIndex(color_idx if color_idx >= 0 else 0)
+                self.crosshair_length.setValue(config.get("crosshair_length", 10))
+                self.crosshair_thickness.setValue(config.get("crosshair_thickness", 2))
+                self.crosshair_gap.setValue(config.get("crosshair_gap", 4))
+                self.crosshair_dot_size.setValue(config.get("crosshair_dot_size", 2))
                 self.snap_threshold.setValue(config.get("snap_threshold", 40))
                 self.snap_sensitivity.setValue(config.get("snap_sensitivity", 2.2))
                 self.snap_cooldown.setValue(config.get("snap_cooldown", 0.2))
@@ -505,19 +671,29 @@ class CustomTrackerPage(SiPage):
         else:
             model_path = ""
 
-        target_idx = self.target_combo.menu().index()
-        options = self.target_combo.menu().options_
-        target_class = options[target_idx].value() if target_idx is not None and target_idx < len(options) else "all"
+        target_idx = self.target_combo.currentIndex()
+        target_class_id = self._target_class_values[target_idx] if 0 <= target_idx < len(self._target_class_values) else None
+
+        mode_idx = self.mode_combo.currentIndex()
+        operation_mode = self._mode_values[mode_idx] if 0 <= mode_idx < len(self._mode_values) else "auto_aim"
 
         return {
             "model_path": model_path,
-            "operation_mode": "auto_aim",
-            "aim_part": target_class,
+            "operation_mode": operation_mode,
+            "target_class_id": target_class_id,
             "fov_width": self.fov_width.value(),
             "fov_height": self.fov_height.value(),
+            "aim_point_y": self.aim_point_y.value(),
             "show_overlay": self.show_overlay.isChecked(),
             "show_bbox": self.show_bbox.isChecked(),
             "overlay_opacity": self.overlay_opacity.value(),
+            "crosshair_show": self.crosshair_show.isChecked(),
+            "crosshair_center_dot": self.crosshair_center_dot.isChecked(),
+            "crosshair_color": self.crosshair_color.currentText(),
+            "crosshair_length": self.crosshair_length.value(),
+            "crosshair_thickness": self.crosshair_thickness.value(),
+            "crosshair_gap": self.crosshair_gap.value(),
+            "crosshair_dot_size": self.crosshair_dot_size.value(),
             "auto_click": False,
             "snap_threshold": self.snap_threshold.value(),
             "snap_sensitivity": self.snap_sensitivity.value(),
@@ -531,13 +707,23 @@ class CustomTrackerPage(SiPage):
             "pid_error_threshold": self.pid_error_threshold.value(),
         }
 
+    def _saveConfig(self):
+        """Save current settings to config file."""
+        config = self._buildConfig()
+        config_name = self._config_manager.get_current_config_name() or "Default"
+        self._config_manager.save_config(config_name, config)
+
+    def _setButtonState(self, active_button):
+        for btn in (self.btn_start, self.btn_pause, self.btn_stop):
+            btn.setChecked(btn == active_button)
+
     def _startTracking(self):
         if not self._tracker_manager:
             return
         config = self._buildConfig()
         window_title = None if self.window_combo.currentIndex() == 0 else self.window_combo.currentText()
         self._tracker_manager.start(config, window_title)
-        self.status_label.setText("Running")
+        self._setButtonState(self.btn_start)
 
     def _pauseTracking(self):
         if not self._tracker_manager:
@@ -545,20 +731,27 @@ class CustomTrackerPage(SiPage):
         if self._tracker_manager.is_running():
             if self._tracker_manager.is_paused():
                 self._tracker_manager.resume()
-                self.status_label.setText("Running")
+                self._setButtonState(self.btn_start)
             else:
                 self._tracker_manager.pause()
-                self.status_label.setText("Paused")
+                self._setButtonState(self.btn_pause)
 
     def _stopTracking(self):
         if not self._tracker_manager:
             return
         self._tracker_manager.stop()
-        self.status_label.setText("Idle")
+        self._setButtonState(self.btn_stop)
 
     def _onStatusChanged(self, status: str):
-        self.status_label.setText(status)
+        status_map = {
+            "running": self.btn_start,
+            "paused": self.btn_pause,
+            "stopped": self.btn_stop,
+        }
+        btn = status_map.get(status.lower())
+        if btn:
+            self._setButtonState(btn)
 
     def refreshClassConfig(self):
-        """Called externally when class config is updated."""
-        self._loadClassConfig()
+        """Called externally to reload class names from the currently selected model."""
+        self._onModelSelected(self.model_combo.currentIndex())

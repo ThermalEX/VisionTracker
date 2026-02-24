@@ -20,6 +20,44 @@ from config import TrainConfig
 from modules.my_trainer import train_model
 
 
+def _patch_torch_save():
+    """Fix Python 3.13 + ultralytics BytesIO compatibility bug.
+
+    In Python 3.13, PyTorch's C++ ZipFile writer closes the underlying
+    BytesIO in its destructor, causing 'I/O operation on closed file'
+    when ultralytics' save_model() uses a BytesIO buffer with torch.save.
+    This patch routes BytesIO saves through a temp file instead.
+    """
+    import io
+    import tempfile
+    import torch
+
+    try:
+        import ultralytics.utils.patches as _ul_patches
+        _real_save = _ul_patches._torch_save
+
+        def _safe_save(obj, f, *args, **kwargs):
+            if isinstance(f, io.BytesIO):
+                fd, tmp = tempfile.mkstemp(suffix='.pt.tmp')
+                os.close(fd)
+                try:
+                    _real_save(obj, tmp, *args, **kwargs)
+                    with open(tmp, 'rb') as tmp_f:
+                        f.write(tmp_f.read())
+                finally:
+                    try:
+                        os.unlink(tmp)
+                    except OSError:
+                        pass
+            else:
+                _real_save(obj, f, *args, **kwargs)
+
+        _ul_patches.torch_save = _safe_save
+        torch.save = _safe_save
+    except Exception as e:
+        print(f"[WARN] Could not apply torch.save patch: {e}")
+
+
 def main():
     if len(sys.argv) < 2:
         print("Usage: python train_runner.py <config.json>", file=sys.stderr)
@@ -35,12 +73,18 @@ def main():
         print(f"Error reading config: {e}", file=sys.stderr)
         sys.exit(1)
 
+    # Apply torch.save fix before ultralytics is used
+    _patch_torch_save()
+
     # Create TrainConfig and override with GUI values
     config = TrainConfig(create_dirs=False)
 
     for key, value in config_dict.items():
         if hasattr(config, key) and value != "":
             setattr(config, key, value)
+
+    # Round img_size up to the nearest multiple of 32 (YOLO requirement)
+    config.img_size = max(32, ((config.img_size + 31) // 32) * 32)
 
     # Create directories after setting all values
     config.exp_dir = config._get_save_dir()

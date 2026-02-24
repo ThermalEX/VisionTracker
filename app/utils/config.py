@@ -9,12 +9,16 @@ class Config:
     FOV_HEIGHT = 200
     IMGSZ = 200
 
+    # Aim point vertical offset: 0 = top of bbox, 50 = center, 100 = bottom
+    AIM_POINT_Y = 50
+
     # Detection settings
     CONF_THRESHOLD = 0.3
 
-    # Team settings (which team to target)
-    # 'T' = target T side (we are CT), 'CT' = target CT side (we are T)
-    TARGET_TEAM = 'T'  # Default: we are CT, target T
+    # Target class setting: int / list of ints / None for all classes
+    TARGET_CLASS_ID = None
+    # Preferred class IDs: when set, prefer these over other classes (head priority mode)
+    PREFER_CLASS_IDS = None
 
     # Aim settings
     AIM_ENABLED = True

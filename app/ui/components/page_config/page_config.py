@@ -378,9 +378,10 @@ class ConfigPage(SiPage):
         self.aim_part_card.setTitle("Aim Part", "Lock to head or body of detected target")
         self.aim_part_card.load(SiGlobal.siui.iconpack.get("ic_fluent_zoom_fit_regular"))
         self.aim_part_combo = SiComboBox(self)
-        self.aim_part_combo.resize(150, 32)
+        self.aim_part_combo.resize(180, 32)
         self.aim_part_combo.menu().addOption("Head", value="head")
         self.aim_part_combo.menu().addOption("Body", value="body")
+        self.aim_part_combo.menu().addOption("Head Priority", value="head_priority")
         self.aim_part_combo.menu().setIndex(0)
         self.aim_part_card.addWidget(self.aim_part_combo)
         self.titled_group.addWidget(self.aim_part_card)
@@ -411,8 +412,17 @@ class ConfigPage(SiPage):
         self.fov_height.setMaximum(800)
         self.fov_height.setSingleStep(10)
 
+        self.aim_point_y = SiSliderSpinBox(self)
+        self.aim_point_y.setTitle("Aim Height (%)")
+        self.aim_point_y.setHint("Vertical aim point within bbox: 0=top, 50=center, 100=bottom")
+        self.aim_point_y.resize(200, 84)
+        self.aim_point_y.setMinimum(0)
+        self.aim_point_y.setMaximum(100)
+        self.aim_point_y.setSingleStep(5)
+
         fov_container.addWidget(self.fov_width, side="left")
         fov_container.addWidget(self.fov_height, side="left")
+        fov_container.addWidget(self.aim_point_y, side="left")
         fov_card.body().addWidget(fov_container)
         fov_card.adjustSize()
         self.titled_group.addWidget(fov_card)
@@ -485,15 +495,19 @@ class ConfigPage(SiPage):
         self.crosshair_color_card = SiOptionCardLinear(self)
         self.crosshair_color_card.setTitle("Crosshair Color", "Color of the crosshair lines")
         self.crosshair_color_card.load(SiGlobal.siui.iconpack.get("ic_fluent_color_regular"))
-        self.crosshair_color = SiComboBox(self)
-        self.crosshair_color.resize(150, 32)
-        self.crosshair_color.menu().addOption("Green", value="green")
-        self.crosshair_color.menu().addOption("Red", value="red")
-        self.crosshair_color.menu().addOption("Yellow", value="yellow")
-        self.crosshair_color.menu().addOption("Cyan", value="cyan")
-        self.crosshair_color.menu().addOption("White", value="white")
-        self.crosshair_color.menu().addOption("Magenta", value="magenta")
-        self.crosshair_color.menu().setIndex(0)
+        self.crosshair_color = SiCapsuleComboBox(self)
+        self.crosshair_color.setFixedSize(150, 32)
+        self.crosshair_color.setTitle("Color")
+        self.crosshair_color.setEditable(False)
+        self.crosshair_color._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
+        self.crosshair_color._line_edit.style_data.text_indicator_color_editing = QColor("#00000000")
+        self.crosshair_color.addItem("Green")
+        self.crosshair_color.addItem("Red")
+        self.crosshair_color.addItem("Yellow")
+        self.crosshair_color.addItem("Cyan")
+        self.crosshair_color.addItem("White")
+        self.crosshair_color.addItem("Magenta")
+        self.crosshair_color.setCurrentIndex(0)
         self.crosshair_color_card.addWidget(self.crosshair_color)
         self.titled_group.addWidget(self.crosshair_color_card)
 
@@ -638,8 +652,8 @@ class ConfigPage(SiPage):
         self.snap_sensitivity.resize(180, 84)
         self.snap_sensitivity.setMinimum(0.1)
         self.snap_sensitivity.setMaximum(5.0)
-        self.snap_sensitivity.setSingleStep(0.1)
-        self.snap_sensitivity.setDecimals(1)
+        self.snap_sensitivity.setSingleStep(0.05)
+        self.snap_sensitivity.setDecimals(2)
 
         self.snap_cooldown = SiSliderDoubleSpinBox(self)
         self.snap_cooldown.setTitle("Cooldown (s)")
@@ -767,12 +781,13 @@ class ConfigPage(SiPage):
 
             # Aim Part
             aim_part = config.get("aim_part", "head")
-            aim_part_map = {"head": 0, "body": 1}
+            aim_part_map = {"head": 0, "body": 1, "head_priority": 2}
             self.aim_part_combo.menu().setIndex(aim_part_map.get(aim_part, 0))
 
             # FOV
             self.fov_width.setValue(config.get("fov_width", 200))
             self.fov_height.setValue(config.get("fov_height", 200))
+            self.aim_point_y.setValue(config.get("aim_point_y", 50))
 
             # Display
             self.show_overlay.setChecked(config.get("show_overlay", True))
@@ -788,7 +803,7 @@ class ConfigPage(SiPage):
             self.crosshair_dot_size.setValue(config.get("crosshair_dot_size", 2))
             color = config.get("crosshair_color", "green")
             color_map = {"green": 0, "red": 1, "yellow": 2, "cyan": 3, "white": 4, "magenta": 5}
-            self.crosshair_color.menu().setIndex(color_map.get(color, 0))
+            self.crosshair_color.setCurrentIndex(color_map.get(color, 0))
 
             # Fire
             self.click_interval.setValue(config.get("click_interval", 0.2))
@@ -824,7 +839,7 @@ class ConfigPage(SiPage):
         mode = mode_values[mode_idx] if mode_idx is not None else "auto_aim"
 
         # Aim Part
-        aim_part_values = ["head", "body"]
+        aim_part_values = ["head", "body", "head_priority"]
         aim_part_idx = self.aim_part_combo.menu().index()
         aim_part = aim_part_values[aim_part_idx] if aim_part_idx is not None else "head"
 
@@ -835,8 +850,8 @@ class ConfigPage(SiPage):
 
         # Crosshair color
         color_values = ["green", "red", "yellow", "cyan", "white", "magenta"]
-        color_idx = self.crosshair_color.menu().index()
-        ch_color = color_values[color_idx] if color_idx is not None else "green"
+        color_idx = self.crosshair_color.currentIndex()
+        ch_color = color_values[color_idx] if color_idx >= 0 else "green"
 
         return {
             "model_path": model_path,
@@ -844,6 +859,7 @@ class ConfigPage(SiPage):
             "aim_part": aim_part,
             "fov_width": self.fov_width.value(),
             "fov_height": self.fov_height.value(),
+            "aim_point_y": self.aim_point_y.value(),
             "show_overlay": self.show_overlay.isChecked(),
             "show_bbox": self.show_bbox.isChecked(),
             "overlay_opacity": self.overlay_opacity.value(),
@@ -989,7 +1005,7 @@ class ConfigPage(SiPage):
     def _copyCrosshairCode(self):
         """Encode current crosshair settings into a shareable code and copy to clipboard."""
         color_values = ["green", "red", "yellow", "cyan", "white", "magenta"]
-        color_idx = self.crosshair_color.menu().index() or 0
+        color_idx = max(0, self.crosshair_color.currentIndex())
 
         parts = [
             "CSHR",
@@ -1043,7 +1059,7 @@ class ConfigPage(SiPage):
         self.crosshair_length.setValue(max(0, min(50, length)))
         self.crosshair_thickness.setValue(max(1, min(10, thickness)))
         self.crosshair_gap.setValue(max(0, min(20, gap)))
-        self.crosshair_color.menu().setIndex(color_idx)
+        self.crosshair_color.setCurrentIndex(color_idx)
         self.crosshair_center_dot.setChecked(center_dot)
         self.crosshair_dot_size.setValue(max(1, min(10, dot_size)))
 
