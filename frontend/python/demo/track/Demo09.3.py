@@ -266,8 +266,8 @@ if __name__ == '__main__':
 
     # 扫描可用模型
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.join(script_dir,
-                              "../..", "models")
+    project_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
+    models_dir = os.path.join(project_root, "app", "models")
 
     import glob
     all_models = []

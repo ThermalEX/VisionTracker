@@ -312,8 +312,9 @@ if __name__ == '__main__':
             monitor = {"left": win_x, "top": win_y, "width": win.width, "height": win.height}
 
     # 选择模型
-    models_dir = os.path.join(os.path.dirname(__file__),
-                              "../..", "models")
+    models_dir = os.path.join(
+        os.path.abspath(os.path.join(os.path.dirname(os.path.abspath(__file__)), "../../../..")),
+        "app", "models")
     model_files = glob.glob(os.path.join(models_dir, "*.engine")) + \
                   glob.glob(os.path.join(models_dir, "*.pt"))
 

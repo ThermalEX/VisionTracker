@@ -296,8 +296,8 @@ if __name__ == '__main__':
             pass
 
     script_dir = os.path.dirname(os.path.abspath(__file__))
-    models_dir = os.path.join(script_dir,
-                              "../..", "models")
+    project_root = os.path.abspath(os.path.join(script_dir, "../../../.."))
+    models_dir = os.path.join(project_root, "app", "models")
 
     model_name = "best 12.23"
     pt_path = os.path.join(models_dir, f"{model_name}.pt")

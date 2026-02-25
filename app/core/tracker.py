@@ -80,6 +80,9 @@ class AimController:
     - PID mode: Smooth adjustment for small errors
     """
 
+    # Frames of forced PID after each snap to prevent oscillation
+    POST_SNAP_SETTLE = 4
+
     def __init__(self, mouse_driver):
         self.mouse = mouse_driver
         self.pid = PIDController()
@@ -101,6 +104,12 @@ class AimController:
         # Sensitivity (can be calibrated)
         self.snap_sensitivity = Config.SNAP_SENSITIVITY
 
+        # Anti-oscillation: post-snap settle counter and velocity tracking
+        self._post_snap_frames = 0
+        self._prev_error_x = 0.0
+        self._prev_error_y = 0.0
+        self._has_prev = False
+
     def reset(self):
         """Reset controller state."""
         self.pid.reset()
@@ -108,6 +117,10 @@ class AimController:
         self.move_acc_y = 0.0
         self.waiting_for_update = False
         self.last_target_id = None
+        self._post_snap_frames = 0
+        self._prev_error_x = 0.0
+        self._prev_error_y = 0.0
+        self._has_prev = False
 
     def update(self, error_x, error_y, target_id=None):
         """
@@ -128,6 +141,8 @@ class AimController:
         if target_id is not None and self.last_target_id is not None:
             if target_id != self.last_target_id:
                 self.pid.reset()
+                self._post_snap_frames = 0
+                self._has_prev = False
         self.last_target_id = target_id
 
         error_dist = math.sqrt(error_x ** 2 + error_y ** 2)
@@ -136,12 +151,14 @@ class AimController:
         if error_dist <= Config.DEADZONE:
             self.current_mode = 'PID'
             self.waiting_for_update = False
+            self._post_snap_frames = 0
             return 'IDLE'
 
-        now = time.time()
-        time_since_move = now - self.last_move_time
+        # Decrement post-snap settle counter each frame
+        if self._post_snap_frames > 0:
+            self._post_snap_frames -= 1
 
-        if error_dist > Config.SNAP_THRESHOLD:
+        if error_dist > Config.SNAP_THRESHOLD and self._post_snap_frames == 0:
             # === SNAP mode for large errors ===
             self.current_mode = 'SNAP'
             can_move = self._check_can_move(
@@ -154,10 +171,15 @@ class AimController:
                 move_x = int(error_x * self.snap_sensitivity)
                 move_y = int(error_y * self.snap_sensitivity)
                 self.mouse.move(move_x, move_y)
+                # Reset PID accumulator so stale sub-pixel values don't carry over
+                self.move_acc_x = 0.0
+                self.move_acc_y = 0.0
                 self._record_move(error_x, error_y)
+                # Block snap for N frames to prevent oscillation from overshoot
+                self._post_snap_frames = self.POST_SNAP_SETTLE
 
         else:
-            # === PID mode for fine adjustment ===
+            # === PID mode: fine adjustment or post-snap settle ===
             self.current_mode = 'PID'
             can_move = self._check_can_move(
                 error_x, error_y,
