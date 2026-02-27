@@ -10,6 +10,77 @@ from multiprocessing import Process, Queue, Event
 
 from utils.config import Config
 
+try:
+    from PIL import ImageFont, ImageDraw, Image as PILImage
+    _PIL_AVAILABLE = True
+except ImportError:
+    _PIL_AVAILABLE = False
+
+# YaHei font paths to try (Windows)
+_YAHEI_FONT_PATHS = [
+    r"C:\Windows\Fonts\msyh.ttc",
+    r"C:\Windows\Fonts\msyhbd.ttc",
+    r"C:\Windows\Fonts\simhei.ttf",
+]
+
+
+def _load_yahei(size: int):
+    """Load Microsoft YaHei font, fallback to PIL default."""
+    if not _PIL_AVAILABLE:
+        return None
+    for path in _YAHEI_FONT_PATHS:
+        try:
+            return ImageFont.truetype(path, size)
+        except Exception:
+            continue
+    try:
+        return ImageFont.load_default()
+    except Exception:
+        return None
+
+
+def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
+                 auto_fire: bool, mode: str, conf: float, dist: float,
+                 font, font_s) -> np.ndarray:
+    """Draw minimalist status overlay using YaHei font via PIL."""
+    if not _PIL_AVAILABLE or font is None:
+        # Fallback: plain cv2 text
+        aim_col = (0, 255, 0) if aim_active else (0, 0, 255)
+        cv2.putText(overlay, f"{fps:.0f}fps  {mode}", (12, 22),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
+        cv2.putText(overlay, f"AIM {'ON' if aim_active else 'OFF'}", (12, 44),
+                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, aim_col, 1)
+        return overlay
+
+    # Convert BGR numpy → PIL RGB
+    pil_img = PILImage.fromarray(overlay[:, :, ::-1])
+    draw = ImageDraw.Draw(pil_img)
+
+    x, y = 12, 8
+    row_h = 22  # line height
+
+    # Row 1: FPS  MODE
+    mode_col = (255, 130, 50) if mode == 'SNAP' else (100, 255, 100)
+    draw.text((x, y), f"{fps:.0f} fps", font=font, fill=(180, 180, 180))
+    draw.text((x + 72, y), mode, font=font, fill=mode_col)
+
+    # Row 2: AIM●   FIRE●
+    y += row_h
+    aim_dot = (100, 255, 100) if aim_active else (255, 70, 70)
+    fire_dot = (100, 230, 255) if auto_fire else (110, 110, 110)
+    draw.text((x, y), "AIM", font=font, fill=(160, 160, 160))
+    draw.text((x + 34, y), "●", font=font, fill=aim_dot)
+    draw.text((x + 56, y), "FIRE", font=font, fill=(160, 160, 160))
+    draw.text((x + 100, y), "●", font=font, fill=fire_dot)
+
+    # Row 3 (only when target locked): conf + dist
+    if conf > 0:
+        y += row_h
+        draw.text((x, y), f"{conf:.2f}  {dist:.0f}px", font=font_s, fill=(170, 100, 210))
+
+    # Convert back to BGR numpy
+    return np.array(pil_img)[:, :, ::-1]
+
 # Crosshair color presets (BGR format for OpenCV)
 COLOR_MAP = {
     'green': (0, 255, 0),
@@ -50,6 +121,10 @@ class OverlayProcess:
         """Main overlay loop (runs in separate process)."""
         window_name = "Overlay"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
+
+        # Load fonts for status text (once per process)
+        _font = _load_yahei(14)
+        _font_s = _load_yahei(12)
 
         # Create dummy window first
         dummy = np.zeros((win_h, win_w, 3), dtype=np.uint8)
@@ -102,13 +177,12 @@ class OverlayProcess:
             center_x, center_y = data.get('center', (win_w // 2, win_h // 2))
             head_x, head_y = data.get('head', (None, None))
             aim_active = data.get('aim_active', False)
+            auto_fire = data.get('auto_fire', False)
             conf = data.get('conf', 0)
             dist = data.get('dist', 0)
             fps = data.get('fps', 0)
             click_radius = data.get('click_radius', Config.CLICK_RADIUS_MIN)
             mode = data.get('mode', 'PID')
-            sens = data.get('sens', Config.SNAP_SENSITIVITY)
-            kp = data.get('kp', Config.PID_KP)
             calibrating = data.get('calibrating', False)
             calib_move = data.get('calib_move', None)  # (dx, dy) for calibration move line
             show_bbox = data.get('show_bbox', False)
@@ -210,24 +284,9 @@ class OverlayProcess:
 
                     cv2.line(overlay, (calib_start_x, calib_start_y), (calib_end_x, calib_end_y), (0, 255, 255), 3)
 
-            # Draw status text
-            aim_color = (0, 255, 0) if aim_active else (0, 0, 255)
-            cv2.putText(overlay, f"FPS:{fps:.0f}", (10, 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-            cv2.putText(overlay, f"AIM:{'ON' if aim_active else 'OFF'}", (100, 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, aim_color, 2)
-            cv2.putText(overlay, f"FIRE:{'ON' if Config.AUTO_FIRE else 'OFF'}", (200, 25),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
-
-            mode_color = (255, 100, 0) if mode == 'SNAP' else (0, 255, 0)
-            cv2.putText(overlay, f"Mode:{mode}", (10, 50),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, mode_color, 1)
-            cv2.putText(overlay, f"SENS:{sens:.2f} Kp:{kp:.2f}", (10, 75),
-                       cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
-
-            if conf > 0:
-                cv2.putText(overlay, f"Conf:{conf:.2f} Dist:{dist:.0f}px", (10, 100),
-                           cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 255), 1)
+            # Draw minimalist status text (YaHei font via PIL)
+            overlay = _draw_status(overlay, fps, aim_active, auto_fire,
+                                   mode, conf, dist, _font, _font_s)
 
             # Re-assert topmost every frame so full-screen apps can't bury the overlay
             if hwnd:

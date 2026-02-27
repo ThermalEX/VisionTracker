@@ -150,6 +150,7 @@ class VisionTrackerApp(SiliconApplication):
 
         # Settings page - top (last in top section)
         self.settings_page = SettingsPage(self)
+        self.settings_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
             self.settings_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_settings_filled"),

@@ -33,6 +33,7 @@ DEFAULT_HOTKEYS = {
     'stop': 'ctrl+q',            # Stop tracking
     'pause_resume': 'space',     # Pause/Resume tracking
     'calibrate': 'f6',           # Start calibration
+    'lineup_switch': 'f5',       # Switch lineup (T/CT)
 }
 
 
@@ -159,6 +160,7 @@ class TrackerWorker(QThread):
 
     log_message = pyqtSignal(str, str)  # (message, level)
     status_changed = pyqtSignal(str)  # (status)
+    lineup_switched = pyqtSignal()  # emitted when lineup_switch hotkey is pressed
 
     def __init__(self, config: dict, window_title: str = None, hotkeys: dict = None, parent=None):
         super().__init__(parent)
@@ -548,13 +550,12 @@ class TrackerWorker(QThread):
                         'center': (center_x, center_y),
                         'head': (head_x, head_y),
                         'aim_active': aim_active,
+                        'auto_fire': Config.AUTO_FIRE,
                         'conf': current_conf,
                         'dist': current_dist,
                         'fps': current_fps,
                         'click_radius': click_radius,
                         'mode': current_mode,
-                        'sens': Config.SNAP_SENSITIVITY,
-                        'kp': Config.ADRC_KP if Config.CONTROLLER_TYPE == 'adrc' else Config.PID_KP,
                         'show_bbox': Config.SHOW_BBOX,
                         'boxes': all_boxes,
                         'crosshair_show': Config.CROSSHAIR_SHOW,
@@ -574,13 +575,15 @@ class TrackerWorker(QThread):
         self._hotkey_manager.register('pause_resume', self._on_hotkey_pause_resume)
         self._hotkey_manager.register('stop', self._on_hotkey_stop)
         self._hotkey_manager.register('calibrate', self._on_hotkey_calibrate)
+        self._hotkey_manager.register('lineup_switch', self._on_hotkey_lineup_switch)
 
         # Log hotkey info
         aim_key = self._hotkey_manager.get_hotkey('aim_key')
         stop_key = self._hotkey_manager.get_hotkey('stop')
         pause_key = self._hotkey_manager.get_hotkey('pause_resume')
+        lineup_key = self._hotkey_manager.get_hotkey('lineup_switch')
         self.log_message.emit(f"Aim key: [{aim_key or 'Always On'}]", "INFO")
-        self.log_message.emit(f"Hotkeys: [{pause_key}] Pause/Resume, [{stop_key}] Stop", "INFO")
+        self.log_message.emit(f"Hotkeys: [{pause_key}] Pause/Resume, [{stop_key}] Stop, [{lineup_key}] Lineup Switch", "INFO")
 
     def _on_hotkey_pause_resume(self):
         """Handle pause/resume hotkey."""
@@ -592,6 +595,11 @@ class TrackerWorker(QThread):
     def _on_hotkey_stop(self):
         """Handle stop hotkey."""
         self.stop()
+
+    def _on_hotkey_lineup_switch(self):
+        """Handle lineup switch hotkey."""
+        self.log_message.emit("Lineup switch hotkey pressed", "INFO")
+        self.lineup_switched.emit()
 
     def _on_hotkey_calibrate(self):
         """Handle calibrate hotkey."""
@@ -805,11 +813,27 @@ class TrackerManager(QObject):
 
     log_message = pyqtSignal(str, str)  # (message, level)
     status_changed = pyqtSignal(str)  # (status: running/paused/stopped)
+    lineup_switched = pyqtSignal()  # forwarded from worker
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
         self._hotkeys = DEFAULT_HOTKEYS.copy()
+        self._load_hotkeys_from_settings()
+
+    def _load_hotkeys_from_settings(self):
+        """Load saved hotkeys from app_settings.json on startup."""
+        import json as _json
+        try:
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            settings_path = os.path.join(app_dir, "data", "app_settings.json")
+            if os.path.exists(settings_path):
+                with open(settings_path, 'r', encoding='utf-8') as f:
+                    data = _json.load(f)
+                saved = data.get("hotkeys", {})
+                self._hotkeys.update(saved)
+        except Exception:
+            pass
 
     def start(self, config: dict, window_title: str = None):
         """Start the tracking system.
@@ -825,6 +849,7 @@ class TrackerManager(QObject):
         self._worker = TrackerWorker(config, window_title, self._hotkeys, self)
         self._worker.log_message.connect(self.log_message)
         self._worker.status_changed.connect(self.status_changed)
+        self._worker.lineup_switched.connect(self.lineup_switched)
         self._worker.start()
 
     def pause(self):
