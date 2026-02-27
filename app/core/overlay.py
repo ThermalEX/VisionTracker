@@ -216,7 +216,7 @@ class OverlayProcess:
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
             cv2.putText(overlay, f"AIM:{'ON' if aim_active else 'OFF'}", (100, 25),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, aim_color, 2)
-            cv2.putText(overlay, f"FIRE:{'ON' if Config.AUTO_CLICK else 'OFF'}", (200, 25),
+            cv2.putText(overlay, f"FIRE:{'ON' if Config.AUTO_FIRE else 'OFF'}", (200, 25),
                        cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 255), 2)
 
             mode_color = (255, 100, 0) if mode == 'SNAP' else (0, 255, 0)

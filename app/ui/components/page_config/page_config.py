@@ -17,6 +17,7 @@ from siui.components.slider.slider import SiSliderH
 from siui.components.spinbox.slider_spinbox import SiSliderSpinBox, SiSliderDoubleSpinBox
 from siui.components.widgets.button import SiSwitch
 from siui.components.container import SiTriSectionFlatCard
+from siui.components.widgets.navigation_bar import SiNavigationBarH
 from siui.core import Si, SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -256,6 +257,10 @@ class ConfigPage(SiPage):
         self._overlay = None
         self._config_manager = ConfigManager()
         self._model_files = []
+        self._tracker_manager = None
+
+    def setTrackerManager(self, manager):
+        self._tracker_manager = manager
 
         # Main group
         self.titled_group = SiTitledWidgetGroup(self)
@@ -496,7 +501,7 @@ class ConfigPage(SiPage):
         self.crosshair_color_card.setTitle("Crosshair Color", "Color of the crosshair lines")
         self.crosshair_color_card.load(SiGlobal.siui.iconpack.get("ic_fluent_color_regular"))
         self.crosshair_color = SiCapsuleComboBox(self)
-        self.crosshair_color.setFixedSize(150, 32)
+        self.crosshair_color.setFixedSize(200, 32)
         self.crosshair_color.setTitle("Color")
         self.crosshair_color.setEditable(False)
         self.crosshair_color._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
@@ -679,16 +684,64 @@ class ConfigPage(SiPage):
         snap_card.adjustSize()
         self.titled_group.addWidget(snap_card)
 
-        # === PID Settings ===
-        self.titled_group.addTitle("PID Settings (Smooth Move)")
+        # === Controller Settings ===
+        self.titled_group.addTitle("Controller Settings (Smooth Move)")
 
-        pid_card = SiTriSectionFlatCard(self)
-        pid_card.setTitle("PID Parameters")
+        self.controller_card = SiTriSectionFlatCard(self)
+        self.controller_card.setTitle("Controller Parameters")
 
-        # First row: Kp, Ki, Kd
-        pid_row1 = SiDenseHContainer(self)
-        pid_row1.setSpacing(24)
-        pid_row1.setFixedHeight(90)
+        # Nav bar: LADRC | PID
+        self.controller_nav = SiNavigationBarH(self)
+        self.controller_nav.addItem("LADRC")
+        self.controller_nav.addItem("PID")
+        self.controller_nav.setCurrentIndex(0)
+        self.controller_nav.adjustSize()
+        self.controller_nav.setFixedHeight(38)
+        self.controller_card.body().addWidget(self.controller_nav)
+
+        # --- LADRC params row (shown by default) ---
+        self._adrc_row = SiDenseHContainer(self)
+        self._adrc_row.setSpacing(24)
+        self._adrc_row.setMinimumHeight(0)
+        self._adrc_row.setMaximumHeight(90)
+
+        self.adrc_kp = SiSliderDoubleSpinBox(self)
+        self.adrc_kp.setTitle("Kp")
+        self.adrc_kp.setHint("Proportional gain - main control strength")
+        self.adrc_kp.resize(180, 84)
+        self.adrc_kp.setMinimum(0.01)
+        self.adrc_kp.setMaximum(2.0)
+        self.adrc_kp.setSingleStep(0.05)
+        self.adrc_kp.setDecimals(2)
+
+        self.adrc_b0 = SiSliderDoubleSpinBox(self)
+        self.adrc_b0.setTitle("b0")
+        self.adrc_b0.setHint("Control effectiveness (pixels per mouse unit)")
+        self.adrc_b0.resize(180, 84)
+        self.adrc_b0.setMinimum(0.1)
+        self.adrc_b0.setMaximum(5.0)
+        self.adrc_b0.setSingleStep(0.1)
+        self.adrc_b0.setDecimals(2)
+
+        self.adrc_alpha = SiSliderDoubleSpinBox(self)
+        self.adrc_alpha.setTitle("Alpha")
+        self.adrc_alpha.setHint("ESO update rate: higher = faster but noisier")
+        self.adrc_alpha.resize(180, 84)
+        self.adrc_alpha.setMinimum(0.01)
+        self.adrc_alpha.setMaximum(1.0)
+        self.adrc_alpha.setSingleStep(0.05)
+        self.adrc_alpha.setDecimals(2)
+
+        self._adrc_row.addWidget(self.adrc_kp, side="left")
+        self._adrc_row.addWidget(self.adrc_b0, side="left")
+        self._adrc_row.addWidget(self.adrc_alpha, side="left")
+        self.controller_card.body().addWidget(self._adrc_row)
+
+        # --- PID params row (hidden by default) ---
+        self._pid_row = SiDenseHContainer(self)
+        self._pid_row.setSpacing(24)
+        self._pid_row.setMinimumHeight(0)
+        self._pid_row.setMaximumHeight(0)
 
         self.pid_kp = SiSliderDoubleSpinBox(self)
         self.pid_kp.setTitle("Kp")
@@ -717,15 +770,16 @@ class ConfigPage(SiPage):
         self.pid_kd.setSingleStep(0.001)
         self.pid_kd.setDecimals(3)
 
-        pid_row1.addWidget(self.pid_kp, side="left")
-        pid_row1.addWidget(self.pid_ki, side="left")
-        pid_row1.addWidget(self.pid_kd, side="left")
-        pid_card.body().addWidget(pid_row1)
+        self._pid_row.addWidget(self.pid_kp, side="left")
+        self._pid_row.addWidget(self.pid_ki, side="left")
+        self._pid_row.addWidget(self.pid_kd, side="left")
+        self.controller_card.body().addWidget(self._pid_row)
+        self._pid_row.setVisible(False)
 
-        # Second row: Deadzone, Cooldown, Error Threshold
-        pid_row2 = SiDenseHContainer(self)
-        pid_row2.setSpacing(24)
-        pid_row2.setFixedHeight(90)
+        # --- Shared tracking params row ---
+        shared_row = SiDenseHContainer(self)
+        shared_row.setSpacing(24)
+        shared_row.setFixedHeight(90)
 
         self.deadzone = SiSliderSpinBox(self)
         self.deadzone.setTitle("Deadzone")
@@ -736,7 +790,7 @@ class ConfigPage(SiPage):
 
         self.pid_cooldown = SiSliderDoubleSpinBox(self)
         self.pid_cooldown.setTitle("Cooldown")
-        self.pid_cooldown.setHint("Time between PID updates (s)")
+        self.pid_cooldown.setHint("Time between controller updates (s)")
         self.pid_cooldown.resize(180, 84)
         self.pid_cooldown.setMinimum(0.01)
         self.pid_cooldown.setMaximum(0.5)
@@ -750,13 +804,17 @@ class ConfigPage(SiPage):
         self.pid_error_threshold.setMinimum(1)
         self.pid_error_threshold.setMaximum(20)
 
-        pid_row2.addWidget(self.deadzone, side="left")
-        pid_row2.addWidget(self.pid_cooldown, side="left")
-        pid_row2.addWidget(self.pid_error_threshold, side="left")
-        pid_card.body().addWidget(pid_row2)
+        shared_row.addWidget(self.deadzone, side="left")
+        shared_row.addWidget(self.pid_cooldown, side="left")
+        shared_row.addWidget(self.pid_error_threshold, side="left")
+        self.controller_card.body().addWidget(shared_row)
 
-        pid_card.adjustSize()
-        self.titled_group.addWidget(pid_card)
+        self.controller_card.adjustSize()
+        self.titled_group.addWidget(self.controller_card)
+
+        # Connect nav bar
+        self.controller_nav.indexChanged.connect(self._onControllerTypeChanged)
+        self.controller_nav.indexChanged.connect(self._updateControllerNavColors)
 
     def _loadConfigList(self):
         """Load config list into the selector."""
@@ -820,6 +878,17 @@ class ConfigPage(SiPage):
             self.snap_cooldown.setValue(config.get("snap_cooldown", 0.2))
             self.snap_update_threshold.setValue(config.get("snap_update_threshold", 20))
 
+            # Controller type
+            ctrl_type = config.get("controller_type", "adrc")
+            ctrl_idx = 0 if ctrl_type == "adrc" else 1
+            self.controller_nav.setCurrentIndex(ctrl_idx)
+            self._onControllerTypeChanged(ctrl_idx)
+
+            # LADRC
+            self.adrc_kp.setValue(config.get("adrc_kp", 0.3))
+            self.adrc_b0.setValue(config.get("adrc_b0", 1.0))
+            self.adrc_alpha.setValue(config.get("adrc_alpha", 0.3))
+
             # PID
             self.pid_kp.setValue(config.get("pid_kp", 0.3))
             self.pid_ki.setValue(config.get("pid_ki", 0.0))
@@ -880,6 +949,10 @@ class ConfigPage(SiPage):
             "snap_sensitivity": self.snap_sensitivity.value(),
             "snap_cooldown": self.snap_cooldown.value(),
             "snap_update_threshold": self.snap_update_threshold.value(),
+            "controller_type": "adrc" if self.controller_nav.currentIndex() == 0 else "pid",
+            "adrc_kp": self.adrc_kp.value(),
+            "adrc_b0": self.adrc_b0.value(),
+            "adrc_alpha": self.adrc_alpha.value(),
             "pid_kp": self.pid_kp.value(),
             "pid_ki": self.pid_ki.value(),
             "pid_kd": self.pid_kd.value(),
@@ -888,10 +961,28 @@ class ConfigPage(SiPage):
             "pid_error_threshold": self.pid_error_threshold.value(),
         }
 
+    def _onControllerTypeChanged(self, index: int):
+        is_adrc = (index == 0)
+        self._adrc_row.setMaximumHeight(90 if is_adrc else 0)
+        self._adrc_row.setVisible(is_adrc)
+        self._pid_row.setMaximumHeight(90 if not is_adrc else 0)
+        self._pid_row.setVisible(not is_adrc)
+
+    def _updateControllerNavColors(self, index: int):
+        for btn in self.controller_nav.item_dict.values():
+            btn.attachment().setTextColor(self.controller_nav.getColor(SiColor.TEXT_B))
+        selected = self.controller_nav.item_dict.get(str(index))
+        if selected:
+            selected.attachment().setTextColor(self.controller_nav.getColor(SiColor.THEME))
+
     def _onConfigSelected(self, index: int):
         configs = self._config_manager.list_configs()
         if 0 <= index < len(configs):
             self._loadConfig(configs[index])
+
+    def showEvent(self, event):
+        super().showEvent(event)
+        QTimer.singleShot(0, lambda: self._updateControllerNavColors(self.controller_nav.currentIndex()))
 
     def _onSaveConfig(self):
         name = self._config_manager.get_current_config_name()
@@ -899,6 +990,8 @@ class ConfigPage(SiPage):
             config = self._getCurrentConfig()
             if self._config_manager.save_config(name, config):
                 self._showNotification("Saved", f"'{name}' saved.", 1)
+                if self._tracker_manager and self._tracker_manager.is_running():
+                    self._tracker_manager.update_config(config)
             else:
                 self._showNotification("Failed", "Could not save.", 3)
 

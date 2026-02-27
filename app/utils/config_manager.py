@@ -52,6 +52,12 @@ DEFAULT_CONFIG = {
     "deadzone": 0,
     "pid_cooldown": 0.05,
     "pid_error_threshold": 3,
+
+    # Controller type
+    "controller_type": "adrc",  # "pid" or "adrc"
+    "adrc_kp": 0.3,
+    "adrc_b0": 1.0,
+    "adrc_alpha": 0.3,
 }
 
 

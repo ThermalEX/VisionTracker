@@ -3,12 +3,13 @@
 import glob
 import os
 
-from PyQt5.QtCore import Qt
+from PyQt5.QtCore import Qt, QTimer
 from PyQt5.QtGui import QColor
 
 from siui.components import SiDenseHContainer, SiLabel, SiTitledWidgetGroup, SiOptionCardLinear
 from siui.components.button import SiFlatButton, SiCapsuleButton
 from siui.components.combobox_ import SiCapsuleComboBox
+from siui.components.widgets.navigation_bar import SiNavigationBarH
 from siui.components.container import SiTriSectionFlatCard
 from siui.components.page import SiPage
 from siui.components.slider.slider import SiSliderH
@@ -328,7 +329,7 @@ class CustomTrackerPage(SiPage):
         self.crosshair_color_card.setTitle("Crosshair Color", "Color of the crosshair lines")
         self.crosshair_color_card.load(SiGlobal.siui.iconpack.get("ic_fluent_color_regular"))
         self.crosshair_color = SiCapsuleComboBox(self)
-        self.crosshair_color.setFixedSize(160, 32)
+        self.crosshair_color.setFixedSize(200, 32)
         self.crosshair_color.setTitle("Color")
         self.crosshair_color.setEditable(False)
         self.crosshair_color._line_edit.style_data.text_indicator_color_idle = QColor("#00000000")
@@ -449,14 +450,26 @@ class CustomTrackerPage(SiPage):
     # ── PID Settings ───────────────────────────────────────────────
 
     def _createPidSection(self):
-        self.titled_group.addTitle("PID Settings (Smooth Move)")
+        self.titled_group.addTitle("Controller Settings (Smooth Move)")
 
-        pid_card = SiTriSectionFlatCard(self)
-        pid_card.setTitle("PID Parameters")
+        self._pid_card = SiTriSectionFlatCard(self)
+        self._pid_card.setTitle("Controller Parameters")
 
-        pid_row1 = SiDenseHContainer(self)
-        pid_row1.setSpacing(24)
-        pid_row1.setFixedHeight(90)
+        # --- Controller type nav bar: ADRC | PID ---
+        self.controller_nav = SiNavigationBarH(self)
+        self.controller_nav.addItem("ADRC")
+        self.controller_nav.addItem("PID")
+        self.controller_nav.setCurrentIndex(0)  # Default: ADRC (index 0)
+        self.controller_nav.adjustSize()
+        self.controller_nav.setFixedHeight(38)
+
+        self._pid_card.body().addWidget(self.controller_nav)
+
+        # --- PID params row (index 1, hidden by default) ---
+        self._pid_row1 = SiDenseHContainer(self)
+        self._pid_row1.setSpacing(24)
+        self._pid_row1.setMinimumHeight(0)
+        self._pid_row1.setMaximumHeight(0)
 
         self.pid_kp = SiSliderDoubleSpinBox(self)
         self.pid_kp.setTitle("Kp")
@@ -467,7 +480,7 @@ class CustomTrackerPage(SiPage):
         self.pid_kp.setSingleStep(0.05)
         self.pid_kp.setDecimals(2)
         self.pid_kp.setValue(0.3)
-        pid_row1.addWidget(self.pid_kp, side="left")
+        self._pid_row1.addWidget(self.pid_kp, side="left")
 
         self.pid_ki = SiSliderDoubleSpinBox(self)
         self.pid_ki.setTitle("Ki")
@@ -478,7 +491,7 @@ class CustomTrackerPage(SiPage):
         self.pid_ki.setSingleStep(0.01)
         self.pid_ki.setDecimals(2)
         self.pid_ki.setValue(0.0)
-        pid_row1.addWidget(self.pid_ki, side="left")
+        self._pid_row1.addWidget(self.pid_ki, side="left")
 
         self.pid_kd = SiSliderDoubleSpinBox(self)
         self.pid_kd.setTitle("Kd")
@@ -489,10 +502,53 @@ class CustomTrackerPage(SiPage):
         self.pid_kd.setSingleStep(0.001)
         self.pid_kd.setDecimals(3)
         self.pid_kd.setValue(0.001)
-        pid_row1.addWidget(self.pid_kd, side="left")
+        self._pid_row1.addWidget(self.pid_kd, side="left")
 
-        pid_card.body().addWidget(pid_row1)
+        self._pid_card.body().addWidget(self._pid_row1)
+        self._pid_row1.setVisible(False)
 
+        # --- ADRC params row (index 0, shown by default) ---
+        self._adrc_row = SiDenseHContainer(self)
+        self._adrc_row.setSpacing(24)
+        self._adrc_row.setMinimumHeight(0)
+        self._adrc_row.setMaximumHeight(90)
+
+        self.adrc_kp = SiSliderDoubleSpinBox(self)
+        self.adrc_kp.setTitle("Kp")
+        self.adrc_kp.setHint("Proportional gain for ADRC")
+        self.adrc_kp.resize(180, 84)
+        self.adrc_kp.setMinimum(0.01)
+        self.adrc_kp.setMaximum(2.0)
+        self.adrc_kp.setSingleStep(0.05)
+        self.adrc_kp.setDecimals(2)
+        self.adrc_kp.setValue(0.3)
+        self._adrc_row.addWidget(self.adrc_kp, side="left")
+
+        self.adrc_b0 = SiSliderDoubleSpinBox(self)
+        self.adrc_b0.setTitle("b0")
+        self.adrc_b0.setHint("Control effectiveness (pixels reduced per mouse unit)")
+        self.adrc_b0.resize(180, 84)
+        self.adrc_b0.setMinimum(0.1)
+        self.adrc_b0.setMaximum(5.0)
+        self.adrc_b0.setSingleStep(0.1)
+        self.adrc_b0.setDecimals(2)
+        self.adrc_b0.setValue(1.0)
+        self._adrc_row.addWidget(self.adrc_b0, side="left")
+
+        self.adrc_alpha = SiSliderDoubleSpinBox(self)
+        self.adrc_alpha.setTitle("Alpha")
+        self.adrc_alpha.setHint("ESO smoothing (0=slow 1=fast, recommended 0.2~0.4)")
+        self.adrc_alpha.resize(180, 84)
+        self.adrc_alpha.setMinimum(0.01)
+        self.adrc_alpha.setMaximum(1.0)
+        self.adrc_alpha.setSingleStep(0.05)
+        self.adrc_alpha.setDecimals(2)
+        self.adrc_alpha.setValue(0.3)
+        self._adrc_row.addWidget(self.adrc_alpha, side="left")
+
+        self._pid_card.body().addWidget(self._adrc_row)
+
+        # --- Shared params row ---
         pid_row2 = SiDenseHContainer(self)
         pid_row2.setSpacing(24)
         pid_row2.setFixedHeight(90)
@@ -508,7 +564,7 @@ class CustomTrackerPage(SiPage):
 
         self.pid_cooldown = SiSliderDoubleSpinBox(self)
         self.pid_cooldown.setTitle("Cooldown (s)")
-        self.pid_cooldown.setHint("Time between PID updates")
+        self.pid_cooldown.setHint("Time between controller updates")
         self.pid_cooldown.resize(180, 84)
         self.pid_cooldown.setMinimum(0.01)
         self.pid_cooldown.setMaximum(0.5)
@@ -526,9 +582,37 @@ class CustomTrackerPage(SiPage):
         self.pid_error_threshold.setValue(3)
         pid_row2.addWidget(self.pid_error_threshold, side="left")
 
-        pid_card.body().addWidget(pid_row2)
-        pid_card.adjustSize()
-        self.titled_group.addWidget(pid_card)
+        self._pid_card.body().addWidget(pid_row2)
+        self._pid_card.adjustSize()
+        self.titled_group.addWidget(self._pid_card)
+
+        # Connect after initial state is set
+        self.controller_nav.indexChanged.connect(self._onControllerTypeChanged)
+        self.controller_nav.indexChanged.connect(self._updateControllerNavColors)
+        self._updateControllerNavColors(0)  # ADRC (index 0) selected by default
+
+    def _onControllerTypeChanged(self, index: int):
+        """Switch between ADRC (index=0) and PID (index=1) parameter rows."""
+        is_adrc = index == 0
+        if is_adrc:
+            self._adrc_row.setMaximumHeight(90)
+        else:
+            self._pid_row1.setMaximumHeight(90)
+        self._adrc_row.setVisible(is_adrc)
+        self._pid_row1.setVisible(not is_adrc)
+
+    def showEvent(self, event):
+        """Re-apply nav bar colors after SiNavigationBarH.showEvent resets them."""
+        super().showEvent(event)
+        QTimer.singleShot(0, lambda: self._updateControllerNavColors(self.controller_nav.currentIndex()))
+
+    def _updateControllerNavColors(self, index: int):
+        """Selected tab uses theme (purple), unselected uses normal text."""
+        for btn in self.controller_nav.item_dict.values():
+            btn.attachment().setTextColor(self.controller_nav.getColor(SiColor.TEXT_B))
+        selected = self.controller_nav.item_dict.get(str(index))
+        if selected:
+            selected.attachment().setTextColor(self.controller_nav.getColor(SiColor.THEME))
 
     # ── Data Loading ───────────────────────────────────────────────
 
@@ -586,19 +670,62 @@ class CustomTrackerPage(SiPage):
         self._updateTargetCombo(names)
 
     def _readModelClassNames(self, model_path: str) -> dict:
-        """Read class names dict {id: name} from a YOLO .pt model file."""
+        """Read class names dict {id: name} from a YOLO model file (.pt or .engine)."""
         if not model_path or not os.path.exists(model_path):
             return {}
-        if not model_path.endswith('.pt'):
+        if model_path.endswith('.pt'):
+            try:
+                import torch
+                ckpt = torch.load(model_path, map_location='cpu', weights_only=False)
+                model_obj = ckpt.get('model') or ckpt.get('ema')
+                if model_obj is not None and hasattr(model_obj, 'names'):
+                    return dict(model_obj.names)
+            except Exception:
+                pass
             return {}
-        try:
-            import torch
-            ckpt = torch.load(model_path, map_location='cpu', weights_only=False)
-            model_obj = ckpt.get('model') or ckpt.get('ema')
-            if model_obj is not None and hasattr(model_obj, 'names'):
-                return dict(model_obj.names)
-        except Exception:
-            pass
+        if model_path.endswith('.engine'):
+            # Strategy 1: ultralytics JSON metadata embedded at end of file
+            try:
+                import json
+                with open(model_path, 'rb') as f:
+                    f.seek(0, 2)
+                    size = f.tell()
+                    f.seek(-min(65536, size), 2)
+                    tail = f.read().decode('utf-8', errors='ignore')
+                pos = len(tail)
+                while True:
+                    pos = tail.rfind('{', 0, pos)
+                    if pos < 0:
+                        break
+                    try:
+                        meta = json.loads(tail[pos:])
+                        names = meta.get('names')
+                        if names is not None:
+                            if isinstance(names, list):
+                                return {i: n for i, n in enumerate(names)}
+                            if isinstance(names, dict):
+                                return {int(k): v for k, v in names.items()}
+                    except Exception:
+                        pass
+            except Exception:
+                pass
+
+            # Strategy 2: find matching .pt in same directory
+            # e.g. "model_200.engine" -> "model.pt"  (strips trailing _DIGITS suffix)
+            import re
+            base = os.path.splitext(model_path)[0]
+            candidates = [base + '.pt', re.sub(r'_\d+$', '', base) + '.pt']
+            for pt_path in candidates:
+                if os.path.exists(pt_path):
+                    try:
+                        import torch
+                        ckpt = torch.load(pt_path, map_location='cpu', weights_only=False)
+                        model_obj = ckpt.get('model') or ckpt.get('ema')
+                        if model_obj is not None and hasattr(model_obj, 'names'):
+                            return dict(model_obj.names)
+                    except Exception:
+                        pass
+            return {}
         return {}
 
     def _updateTargetCombo(self, names: dict):
@@ -659,6 +786,11 @@ class CustomTrackerPage(SiPage):
                 self.deadzone.setValue(config.get("deadzone", 0))
                 self.pid_cooldown.setValue(config.get("pid_cooldown", 0.05))
                 self.pid_error_threshold.setValue(config.get("pid_error_threshold", 3))
+                ctrl_type = config.get("controller_type", "adrc")
+                self.controller_nav.setCurrentIndex(0 if ctrl_type == "adrc" else 1)
+                self.adrc_kp.setValue(config.get("adrc_kp", 0.3))
+                self.adrc_b0.setValue(config.get("adrc_b0", 1.0))
+                self.adrc_alpha.setValue(config.get("adrc_alpha", 0.3))
         except Exception:
             pass
 
@@ -705,13 +837,19 @@ class CustomTrackerPage(SiPage):
             "deadzone": self.deadzone.value(),
             "pid_cooldown": self.pid_cooldown.value(),
             "pid_error_threshold": self.pid_error_threshold.value(),
+            "controller_type": "adrc" if self.controller_nav.currentIndex() == 0 else "pid",
+            "adrc_kp": self.adrc_kp.value(),
+            "adrc_b0": self.adrc_b0.value(),
+            "adrc_alpha": self.adrc_alpha.value(),
         }
 
     def _saveConfig(self):
-        """Save current settings to config file."""
+        """Save current settings and hot-apply to running tracker."""
         config = self._buildConfig()
         config_name = self._config_manager.get_current_config_name() or "Default"
         self._config_manager.save_config(config_name, config)
+        if self._tracker_manager and self._tracker_manager.is_running():
+            self._tracker_manager.update_config(config)
 
     def _setButtonState(self, active_button):
         for btn in (self.btn_start, self.btn_pause, self.btn_stop):

@@ -66,5 +66,13 @@ class Config:
     PID_ERROR_THRESHOLD = 3
     DEADZONE = 0
 
+    # Controller type: 'pid' or 'adrc'
+    CONTROLLER_TYPE = 'adrc'
+
+    # ADRC settings (discrete disturbance estimator)
+    ADRC_KP = 0.3    # Proportional gain for ADRC (independent of PID Kp)
+    ADRC_B0 = 1.0    # Control effectiveness (pixels of error reduced per mouse unit)
+    ADRC_ALPHA = 0.3  # ESO smoothing factor (0~1): higher = faster but noisier
+
     # Calibration
     CALIBRATE_SAMPLES = 3

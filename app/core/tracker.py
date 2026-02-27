@@ -73,6 +73,94 @@ class PIDController:
         return output_x, output_y
 
 
+class ADRCController:
+    """
+    Discrete ADRC for frame-by-frame tracking.
+
+    Uses a per-frame disturbance estimator instead of continuous-time ESO,
+    which avoids the divergence caused by misattributing control effects as
+    disturbances when applied frame-by-frame.
+
+    System model (per frame):
+      error_new = error_old - b0 * u_applied + target_motion
+
+    Disturbance estimation:
+      raw_dist = (error_new - error_old) + b0 * u_applied
+      z2 = alpha * raw_dist + (1 - alpha) * z2   [low-pass filter]
+
+    Control law:
+      u = kp * error + z2 / b0
+        - kp * error : proportional feedback
+        - z2 / b0    : feedforward to pre-compensate target motion
+    """
+
+    def __init__(self, kp=None, b0=None, alpha=None, max_output=100):
+        self.kp = kp if kp is not None else Config.ADRC_KP
+        self.b0 = b0 if b0 is not None else Config.ADRC_B0
+        self.alpha = alpha if alpha is not None else Config.ADRC_ALPHA
+        self.max_output = max_output
+
+        self.z2_x = 0.0
+        self.z2_y = 0.0
+        self.prev_error_x = 0.0
+        self.prev_error_y = 0.0
+        self.prev_u_x = 0.0
+        self.prev_u_y = 0.0
+        self.first_run = True
+
+    def reset(self):
+        self.z2_x = 0.0
+        self.z2_y = 0.0
+        self.prev_error_x = 0.0
+        self.prev_error_y = 0.0
+        self.prev_u_x = 0.0
+        self.prev_u_y = 0.0
+        self.first_run = True
+
+    def compute(self, error_x, error_y, u_applied_x=None, u_applied_y=None):
+        """
+        Update disturbance estimate and compute control output.
+
+        Args:
+            error_x, error_y:         Current pixel error (target - center).
+            u_applied_x, u_applied_y: Actual mouse movement applied last frame.
+                                       If None, uses internally stored prev_u.
+        Returns:
+            (output_x, output_y): Desired mouse movement.
+        """
+        if u_applied_x is not None:
+            self.prev_u_x = float(u_applied_x)
+            self.prev_u_y = float(u_applied_y)
+
+        if self.first_run:
+            self.prev_error_x = float(error_x)
+            self.prev_error_y = float(error_y)
+            self.z2_x = 0.0
+            self.z2_y = 0.0
+            self.first_run = False
+            return 0.0, 0.0
+
+        # Isolate target motion from control effect
+        raw_dist_x = (error_x - self.prev_error_x) + self.b0 * self.prev_u_x
+        raw_dist_y = (error_y - self.prev_error_y) + self.b0 * self.prev_u_y
+
+        # Low-pass filter disturbance estimate
+        self.z2_x = self.alpha * raw_dist_x + (1.0 - self.alpha) * self.z2_x
+        self.z2_y = self.alpha * raw_dist_y + (1.0 - self.alpha) * self.z2_y
+
+        self.prev_error_x = float(error_x)
+        self.prev_error_y = float(error_y)
+
+        # Control: proportional feedback + disturbance feedforward
+        u_x = self.kp * error_x + self.z2_x / self.b0
+        u_y = self.kp * error_y + self.z2_y / self.b0
+
+        u_x = max(-self.max_output, min(self.max_output, u_x))
+        u_y = max(-self.max_output, min(self.max_output, u_y))
+
+        return u_x, u_y
+
+
 class AimController:
     """
     Aim controller combining snap and PID modes.
@@ -86,6 +174,7 @@ class AimController:
     def __init__(self, mouse_driver):
         self.mouse = mouse_driver
         self.pid = PIDController()
+        self.adrc = ADRCController()
 
         # State
         self.last_move_time = 0
@@ -110,9 +199,14 @@ class AimController:
         self._prev_error_y = 0.0
         self._has_prev = False
 
+        # Last applied move for ADRC feedback
+        self._adrc_applied_x = 0.0
+        self._adrc_applied_y = 0.0
+
     def reset(self):
         """Reset controller state."""
         self.pid.reset()
+        self.adrc.reset()
         self.move_acc_x = 0.0
         self.move_acc_y = 0.0
         self.waiting_for_update = False
@@ -121,6 +215,8 @@ class AimController:
         self._prev_error_x = 0.0
         self._prev_error_y = 0.0
         self._has_prev = False
+        self._adrc_applied_x = 0.0
+        self._adrc_applied_y = 0.0
 
     def update(self, error_x, error_y, target_id=None):
         """
@@ -141,8 +237,11 @@ class AimController:
         if target_id is not None and self.last_target_id is not None:
             if target_id != self.last_target_id:
                 self.pid.reset()
+                self.adrc.reset()
                 self._post_snap_frames = 0
                 self._has_prev = False
+                self._adrc_applied_x = 0.0
+                self._adrc_applied_y = 0.0
         self.last_target_id = target_id
 
         error_dist = math.sqrt(error_x ** 2 + error_y ** 2)
@@ -179,8 +278,9 @@ class AimController:
                 self._post_snap_frames = self.POST_SNAP_SETTLE
 
         else:
-            # === PID mode: fine adjustment or post-snap settle ===
-            self.current_mode = 'PID'
+            # === PID / ADRC mode: fine adjustment or post-snap settle ===
+            use_adrc = Config.CONTROLLER_TYPE == 'adrc'
+            self.current_mode = 'ADRC' if use_adrc else 'PID'
             can_move = self._check_can_move(
                 error_x, error_y,
                 Config.PID_COOLDOWN,
@@ -188,7 +288,14 @@ class AimController:
             )
 
             if can_move:
-                out_x, out_y = self.pid.compute(error_x, error_y)
+                if use_adrc:
+                    out_x, out_y = self.adrc.compute(
+                        error_x, error_y,
+                        u_applied_x=self._adrc_applied_x,
+                        u_applied_y=self._adrc_applied_y,
+                    )
+                else:
+                    out_x, out_y = self.pid.compute(error_x, error_y)
 
                 # Accumulator for sub-pixel precision
                 self.move_acc_x += out_x
@@ -201,6 +308,10 @@ class AimController:
                     self.mouse.move(int_move_x, int_move_y)
                     self.move_acc_x -= int_move_x
                     self.move_acc_y -= int_move_y
+
+                # Record actual applied move for ADRC feedback next frame
+                self._adrc_applied_x = float(int_move_x)
+                self._adrc_applied_y = float(int_move_y)
 
                 self._record_move(error_x, error_y)
 

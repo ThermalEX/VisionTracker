@@ -235,6 +235,7 @@ class TrackerWorker(QThread):
 
         Config.SNAP_THRESHOLD = self.config.get('snap_threshold', 40)
         Config.SNAP_SENSITIVITY = self.config.get('snap_sensitivity', 2.2)
+        Config.SNAP_SENSITIVITY = self.config.get('snap_sensitivity', 2.2)
         Config.SNAP_COOLDOWN = self.config.get('snap_cooldown', 0.2)
         Config.SNAP_UPDATE_THRESHOLD = self.config.get('snap_update_threshold', 20)
 
@@ -244,6 +245,21 @@ class TrackerWorker(QThread):
         Config.DEADZONE = self.config.get('deadzone', 0)
         Config.PID_COOLDOWN = self.config.get('pid_cooldown', 0.05)
         Config.PID_ERROR_THRESHOLD = self.config.get('pid_error_threshold', 3)
+
+        Config.CONTROLLER_TYPE = self.config.get('controller_type', 'adrc')
+        Config.ADRC_KP = self.config.get('adrc_kp', 0.3)
+        Config.ADRC_B0 = self.config.get('adrc_b0', 1.0)
+        Config.ADRC_ALPHA = self.config.get('adrc_alpha', 0.3)
+
+        # Propagate controller parameters to running controller instances
+        if self._aim_controller:
+            self._aim_controller.adrc.kp = Config.ADRC_KP
+            self._aim_controller.adrc.b0 = Config.ADRC_B0
+            self._aim_controller.adrc.alpha = Config.ADRC_ALPHA
+            self._aim_controller.pid.kp = Config.PID_KP
+            self._aim_controller.pid.ki = Config.PID_KI
+            self._aim_controller.pid.kd = Config.PID_KD
+            self._aim_controller.snap_sensitivity = Config.SNAP_SENSITIVITY
 
         # Aim point vertical offset (0=top, 50=center, 100=bottom of bbox)
         Config.AIM_POINT_Y = self.config.get('aim_point_y', 50)
@@ -455,7 +471,7 @@ class TrackerWorker(QThread):
             head_x, head_y = None, None
             current_conf, current_dist = 0, 0
             click_radius = Config.CLICK_RADIUS_MIN
-            current_mode = 'PID'
+            current_mode = Config.CONTROLLER_TYPE.upper()
 
             all_boxes = []
             if self._detector and self._detector.model:
@@ -538,7 +554,7 @@ class TrackerWorker(QThread):
                         'click_radius': click_radius,
                         'mode': current_mode,
                         'sens': Config.SNAP_SENSITIVITY,
-                        'kp': Config.PID_KP,
+                        'kp': Config.ADRC_KP if Config.CONTROLLER_TYPE == 'adrc' else Config.PID_KP,
                         'show_bbox': Config.SHOW_BBOX,
                         'boxes': all_boxes,
                         'crosshair_show': Config.CROSSHAIR_SHOW,
@@ -605,7 +621,7 @@ class TrackerWorker(QThread):
                     'click_radius': Config.CLICK_RADIUS_MIN,
                     'mode': 'CALIB',
                     'sens': Config.SNAP_SENSITIVITY,
-                    'kp': Config.PID_KP,
+                    'kp': Config.ADRC_KP if Config.CONTROLLER_TYPE == 'adrc' else Config.PID_KP,
                     'calibrating': True,
                     'calib_move': calib_move,
                     'crosshair_show': Config.CROSSHAIR_SHOW,
@@ -652,7 +668,7 @@ class TrackerWorker(QThread):
             x1 = max(0, cx - Config.FOV_WIDTH // 2)
             y1 = max(0, cy - Config.FOV_HEIGHT // 2)
             x2 = min(w, cx + Config.FOV_WIDTH // 2)
-            y2 = min(h, cy + Config.FOV_HEIGHT // 2)
+            y2 = min(h, cx + Config.FOV_HEIGHT // 2)
 
             boxes = self._detector.detect(frame, roi=(x1, y1, x2, y2))
             # Use None to target all classes during calibration
@@ -733,7 +749,7 @@ class TrackerWorker(QThread):
 
         # Update config
         Config.SNAP_SENSITIVITY = current_sens
-        Config.PID_KP = max(0.1, min(2.0, current_sens / 3.0))
+        Config.PID_KP = max(0.1, min(2.0, current_sens / 4.0))
 
         if self._aim_controller:
             self._aim_controller.snap_sensitivity = Config.SNAP_SENSITIVITY
@@ -837,6 +853,12 @@ class TrackerManager(QObject):
     def is_paused(self) -> bool:
         """Check if tracking is paused."""
         return self._worker is not None and self._worker.is_paused()
+
+    def update_config(self, config: dict):
+        """Hot-update configuration without restarting tracking."""
+        if self._worker and self._worker.is_running():
+            self._worker.config = config
+            self._worker._apply_config()
 
     def set_target_class(self, class_id):
         """Set target class ID during runtime (int or None for all)."""
