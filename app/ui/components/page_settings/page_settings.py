@@ -193,12 +193,49 @@ class SettingsPage(SiPage):
         self.hotkey_lineup_card.addWidget(self.hotkey_lineup)
         self.titled_group.addWidget(self.hotkey_lineup_card)
 
+        # === Overlay Display ===
+        self.titled_group.addTitle("Overlay Display")
+
+        oi_hint = SiLabel(self)
+        oi_hint.setText("Takes effect on next tracking start.")
+        oi_hint.setFont(SiFont.getFont(size=13))
+        oi_hint.setStyleSheet(f"color: {self.getColor(SiColor.TEXT_D)}")
+        oi_hint.setFixedHeight(22)
+        self.titled_group.addWidget(oi_hint)
+
+        def _mk_oi_card(title, desc, icon_key, action):
+            card = SiOptionCardLinear(self)
+            card.setTitle(title, desc)
+            card.load(SiGlobal.siui.iconpack.get(icon_key))
+            sw = SiSwitch(self)
+            sw.toggled.connect(lambda checked, a=action: self._onOverlayInfoChanged(a, checked))
+            card.addWidget(sw)
+            self.titled_group.addWidget(card)
+            return sw
+
+        self.oi_fps   = _mk_oi_card("Show FPS",
+            "Display frames per second counter",
+            "ic_fluent_timer_regular", "show_fps")
+        self.oi_mode  = _mk_oi_card("Show Mode",
+            "Display current controller mode (LADRC / SNAP)",
+            "ic_fluent_target_regular", "show_mode")
+        self.oi_status = _mk_oi_card("Show AIM / FIRE",
+            "Display aim and auto-fire status dots",
+            "ic_fluent_cursor_hover_filled", "show_status")
+        self.oi_target = _mk_oi_card("Show Target Info",
+            "Display confidence and distance when a target is locked",
+            "ic_fluent_eye_regular", "show_target_info")
+        self.oi_ctrl  = _mk_oi_card("Show Controller Params",
+            "Display Kp and sensitivity values",
+            "ic_fluent_settings_regular", "show_ctrl_params")
+
         self.titled_group.addPlaceholder(64)
         self.setAttachment(self.titled_group)
 
         # Sync stored values
         self._syncSwitch()
         self._loadHotkeys()
+        self._loadOverlayInfo()
 
     def setTrackerManager(self, manager):
         self._tracker_manager = manager
@@ -243,6 +280,7 @@ class SettingsPage(SiPage):
     def showEvent(self, event):
         super().showEvent(event)
         self._loadHotkeys()
+        self._loadOverlayInfo()
 
     def _loadHotkeys(self):
         """Refresh button labels from saved hotkeys."""
@@ -259,3 +297,33 @@ class SettingsPage(SiPage):
         self._saveSettings(data)
         if self._tracker_manager:
             self._tracker_manager.set_hotkey(action, key)
+
+    # ─── Overlay info ─────────────────────────────────────────────────────────
+
+    _OI_DEFAULTS = {
+        "show_fps": True, "show_mode": True, "show_status": True,
+        "show_target_info": True, "show_ctrl_params": False,
+    }
+    _OI_SWITCHES = {}  # populated after __init__
+
+    def _loadOverlayInfo(self):
+        """Sync overlay display switches from saved settings."""
+        data = self._loadSettings()
+        oi = data.get("overlay_info", {})
+        switches = {
+            "show_fps":         self.oi_fps,
+            "show_mode":        self.oi_mode,
+            "show_status":      self.oi_status,
+            "show_target_info": self.oi_target,
+            "show_ctrl_params": self.oi_ctrl,
+        }
+        for key, sw in switches.items():
+            sw.blockSignals(True)
+            sw.setChecked(oi.get(key, self._OI_DEFAULTS.get(key, True)))
+            sw.blockSignals(False)
+
+    def _onOverlayInfoChanged(self, action: str, checked: bool):
+        """Persist overlay display flag change."""
+        data = self._loadSettings()
+        data.setdefault("overlay_info", {})[action] = checked
+        self._saveSettings(data)

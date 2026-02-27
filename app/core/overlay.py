@@ -41,7 +41,10 @@ def _load_yahei(size: int):
 
 def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
                  auto_fire: bool, mode: str, conf: float, dist: float,
-                 font, font_s) -> np.ndarray:
+                 kp: float, sens: float, font, font_s,
+                 show_fps: bool = True, show_mode: bool = True,
+                 show_status: bool = True, show_target_info: bool = True,
+                 show_ctrl_params: bool = False) -> np.ndarray:
     """Draw minimalist status overlay using YaHei font via PIL."""
     if not _PIL_AVAILABLE or font is None:
         # Fallback: plain cv2 text
@@ -60,23 +63,37 @@ def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
     row_h = 22  # line height
 
     # Row 1: FPS  MODE
-    mode_col = (255, 130, 50) if mode == 'SNAP' else (100, 255, 100)
-    draw.text((x, y), f"{fps:.0f} fps", font=font, fill=(180, 180, 180))
-    draw.text((x + 72, y), mode, font=font, fill=mode_col)
+    if show_fps or show_mode:
+        row1_parts = []
+        if show_fps:
+            row1_parts.append((f"{fps:.0f} fps", (180, 180, 180)))
+        if show_mode:
+            mode_col = (255, 130, 50) if mode == 'SNAP' else (100, 255, 100)
+            row1_parts.append((mode, mode_col))
+        cx = x
+        for text, col in row1_parts:
+            draw.text((cx, y), text, font=font, fill=col)
+            cx += 80
+        y += row_h
 
     # Row 2: AIM●   FIRE●
-    y += row_h
-    aim_dot = (100, 255, 100) if aim_active else (255, 70, 70)
-    fire_dot = (100, 230, 255) if auto_fire else (110, 110, 110)
-    draw.text((x, y), "AIM", font=font, fill=(160, 160, 160))
-    draw.text((x + 34, y), "●", font=font, fill=aim_dot)
-    draw.text((x + 56, y), "FIRE", font=font, fill=(160, 160, 160))
-    draw.text((x + 100, y), "●", font=font, fill=fire_dot)
+    if show_status:
+        aim_dot = (100, 255, 100) if aim_active else (255, 70, 70)
+        fire_dot = (100, 255, 100) if auto_fire else (110, 110, 110)
+        draw.text((x, y), "AIM", font=font, fill=(160, 160, 160))
+        draw.text((x + 34, y), "●", font=font, fill=aim_dot)
+        draw.text((x + 56, y), "FIRE", font=font, fill=(160, 160, 160))
+        draw.text((x + 100, y), "●", font=font, fill=fire_dot)
+        y += row_h
 
     # Row 3 (only when target locked): conf + dist
-    if conf > 0:
-        y += row_h
+    if show_target_info and conf > 0:
         draw.text((x, y), f"{conf:.2f}  {dist:.0f}px", font=font_s, fill=(170, 100, 210))
+        y += row_h
+
+    # Row 4: controller params
+    if show_ctrl_params:
+        draw.text((x, y), f"Kp {kp:.2f}  Sens {sens:.2f}", font=font_s, fill=(200, 200, 80))
 
     # Convert back to BGR numpy
     return np.array(pil_img)[:, :, ::-1]
@@ -100,11 +117,13 @@ class OverlayProcess:
         self.running_event = running_event
         self.process = None
 
-    def start(self, win_x: int, win_y: int, win_w: int, win_h: int):
+    def start(self, win_x: int, win_y: int, win_w: int, win_h: int,
+              overlay_info: dict = None):
         """Start the overlay process."""
         self.process = Process(
             target=self._overlay_loop,
-            args=(self.overlay_queue, self.running_event, win_x, win_y, win_w, win_h)
+            args=(self.overlay_queue, self.running_event,
+                  win_x, win_y, win_w, win_h, overlay_info or {})
         )
         self.process.start()
 
@@ -117,7 +136,8 @@ class OverlayProcess:
 
     @staticmethod
     def _overlay_loop(overlay_queue: Queue, running_event: Event,
-                      win_x: int, win_y: int, win_w: int, win_h: int):
+                      win_x: int, win_y: int, win_w: int, win_h: int,
+                      overlay_info: dict = None):
         """Main overlay loop (runs in separate process)."""
         window_name = "Overlay"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
@@ -125,6 +145,14 @@ class OverlayProcess:
         # Load fonts for status text (once per process)
         _font = _load_yahei(14)
         _font_s = _load_yahei(12)
+
+        # Overlay display flags (snapshot at startup)
+        _oi = overlay_info or {}
+        _show_fps         = _oi.get("show_fps",         True)
+        _show_mode        = _oi.get("show_mode",        True)
+        _show_status      = _oi.get("show_status",      True)
+        _show_target_info = _oi.get("show_target_info", True)
+        _show_ctrl_params = _oi.get("show_ctrl_params", False)
 
         # Create dummy window first
         dummy = np.zeros((win_h, win_w, 3), dtype=np.uint8)
@@ -285,8 +313,14 @@ class OverlayProcess:
                     cv2.line(overlay, (calib_start_x, calib_start_y), (calib_end_x, calib_end_y), (0, 255, 255), 3)
 
             # Draw minimalist status text (YaHei font via PIL)
+            kp   = data.get('kp',   0.0)
+            sens = data.get('sens', 0.0)
             overlay = _draw_status(overlay, fps, aim_active, auto_fire,
-                                   mode, conf, dist, _font, _font_s)
+                                   mode, conf, dist, kp, sens, _font, _font_s,
+                                   show_fps=_show_fps, show_mode=_show_mode,
+                                   show_status=_show_status,
+                                   show_target_info=_show_target_info,
+                                   show_ctrl_params=_show_ctrl_params)
 
             # Re-assert topmost every frame so full-screen apps can't bury the overlay
             if hwnd:

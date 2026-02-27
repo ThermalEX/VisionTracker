@@ -392,8 +392,10 @@ class TrackerWorker(QThread):
 
                     # Start overlay process (will be hidden behind video)
                     if Config.SHOW_OVERLAY:
+                        overlay_info = self._read_overlay_info()
                         self._overlay_process = OverlayProcess(self._overlay_queue, self._running_event)
-                        self._overlay_process.start(win_x, win_y, win_w, win_h)
+                        self._overlay_process.start(win_x, win_y, win_w, win_h,
+                                                    overlay_info=overlay_info)
                 except Exception as e:
                     init_error[0] = str(e)
 
@@ -556,6 +558,8 @@ class TrackerWorker(QThread):
                         'fps': current_fps,
                         'click_radius': click_radius,
                         'mode': current_mode,
+                        'kp': Config.ADRC_KP if Config.CONTROLLER_TYPE == 'adrc' else Config.PID_KP,
+                        'sens': Config.SNAP_SENSITIVITY,
                         'show_bbox': Config.SHOW_BBOX,
                         'boxes': all_boxes,
                         'crosshair_show': Config.CROSSHAIR_SHOW,
@@ -569,6 +573,24 @@ class TrackerWorker(QThread):
                     })
                 except Exception:
                     pass
+
+    def _read_overlay_info(self) -> dict:
+        """Read overlay display flags from app_settings.json."""
+        import json as _json
+        defaults = {
+            "show_fps": True, "show_mode": True, "show_status": True,
+            "show_target_info": True, "show_ctrl_params": False,
+        }
+        try:
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            path = os.path.join(app_dir, "data", "app_settings.json")
+            if os.path.exists(path):
+                with open(path, 'r', encoding='utf-8') as f:
+                    data = _json.load(f)
+                defaults.update(data.get("overlay_info", {}))
+        except Exception:
+            pass
+        return defaults
 
     def _setup_hotkeys(self):
         """Setup keyboard hotkeys."""
