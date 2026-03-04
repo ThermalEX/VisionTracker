@@ -185,6 +185,13 @@ class TrackerWorker(QThread):
         self._aim_controller = None
         self._mouse_driver = None
 
+        # Overlay display flags (updated in real-time via update_overlay_info)
+        self._overlay_info = {}
+
+    def update_overlay_info(self, key: str, value):
+        """Update a single overlay display flag (takes effect on next frame)."""
+        self._overlay_info[key] = value
+
     def run(self):
         """Main tracking loop."""
         self._running = True
@@ -193,6 +200,9 @@ class TrackerWorker(QThread):
         try:
             # Apply configuration
             self._apply_config()
+
+            # Load overlay display flags from settings
+            self._overlay_info = self._read_overlay_info()
 
             # Initialize components
             if not self._init_components():
@@ -473,7 +483,7 @@ class TrackerWorker(QThread):
 
             # Detect targets (always detect for display, control based on aim_active)
             head_x, head_y = None, None
-            current_conf, current_dist = 0, 0
+            current_conf, current_dist, error_x, error_y = 0, 0, 0, 0
             click_radius = Config.CLICK_RADIUS_MIN
             current_mode = Config.CONTROLLER_TYPE.upper()
 
@@ -555,6 +565,9 @@ class TrackerWorker(QThread):
                         'auto_fire': Config.AUTO_FIRE,
                         'conf': current_conf,
                         'dist': current_dist,
+                        'error_x': int(error_x),
+                        'error_y': int(error_y),
+                        'overlay_info': dict(self._overlay_info),
                         'fps': current_fps,
                         'click_radius': click_radius,
                         'mode': current_mode,
@@ -580,6 +593,7 @@ class TrackerWorker(QThread):
         defaults = {
             "show_fps": True, "show_mode": True, "show_status": True,
             "show_target_info": True, "show_ctrl_params": False,
+            "show_error_vector": True,
         }
         try:
             app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
@@ -935,3 +949,8 @@ class TrackerManager(QObject):
     def get_default_hotkeys() -> dict:
         """Get default hotkey configuration."""
         return DEFAULT_HOTKEYS.copy()
+
+    def set_overlay_flag(self, key: str, value):
+        """Update an overlay display flag in real-time (takes effect on next frame)."""
+        if self._worker:
+            self._worker.update_overlay_info(key, value)

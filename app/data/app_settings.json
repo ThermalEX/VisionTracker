@@ -1,3 +1,14 @@
 {
-  "advanced_mode": true
+  "advanced_mode": true,
+  "overlay_info": {
+    "show_fps": true,
+    "show_ctrl_params": true,
+    "show_mode": true,
+    "show_status": true,
+    "show_target_info": true,
+    "show_error_vector": true
+  },
+  "hotkeys": {
+    "lineup_switch": "f7"
+  }
 }
