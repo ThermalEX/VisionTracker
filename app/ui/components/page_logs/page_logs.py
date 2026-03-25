@@ -1,11 +1,10 @@
 """Vision Tracker - Logs & Statistics Page"""
 
-from collections import deque
 from datetime import datetime
 
 from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QTextCursor
-from PyQt5.QtWidgets import QPushButton, QWidget, QTextEdit
+from PyQt5.QtWidgets import QPushButton, QScrollBar, QWidget, QTextEdit
 
 from siui.components import SiLabel, SiSimpleButton, SiTitledWidgetGroup
 from siui.components.button import SiPushButtonRefactor as SiPushButton
@@ -15,10 +14,10 @@ from siui.gui import SiFont
 
 
 LOG_LEVEL_COLORS = {
-    "ERROR":   "#F2687F",
-    "WARN":    "#F5C35B",
-    "SUCCESS": "#5FD69A",
-    "INFO":    "#8E79D9",
+    "ERROR":   "#FF6767",
+    "WARN":    "#FFD467",
+    "SUCCESS": "#78E09A",
+    "INFO":    "#5BA3F5",
 }
 
 
@@ -46,7 +45,7 @@ class _MetricCard(_PanelCard):
         self._value = "--"
         self._subtitle = ""
         self._accent = QColor(accent)
-        self._history = deque([0.0] * 24, maxlen=24)
+        self._history: list = [0.0] * 24
 
     def setData(self, value: str, subtitle: str, history=None):
         self._value = value
@@ -54,7 +53,7 @@ class _MetricCard(_PanelCard):
         if history is not None:
             hist = list(history)[-24:]
             if hist:
-                self._history = deque(hist, maxlen=24)
+                self._history = hist
         self.update()
 
     def paintEvent(self, event):
@@ -180,52 +179,161 @@ class _LineChartCard(_PanelCard):
                          Qt.AlignLeft | Qt.AlignVCenter, self._current_label)
 
 
+# ── Scrollable chart (full history + pan) ─────────────────────────────────────
+
+class _ScrollableLineChartCard(_PanelCard):
+    """Line chart that stores all history and lets the user scroll back."""
+
+    VIEWPORT = 60  # data points visible at once
+
+    def __init__(self, title: str, subtitle: str, accent: str, parent=None):
+        super().__init__(parent)
+        self.setFixedSize(456, 256)
+        self._title = title
+        self._subtitle = subtitle
+        self._accent = QColor(accent)
+        self._values: list = []
+        self._current_label = ""
+
+        self._scrollbar = QScrollBar(Qt.Horizontal, self)
+        self._scrollbar.setGeometry(20, 238, self.width() - 40, 10)
+        self._scrollbar.setRange(0, 0)
+        self._scrollbar.setSingleStep(1)
+        self._scrollbar.setPageStep(self.VIEWPORT)
+        self._scrollbar.valueChanged.connect(self.update)
+        self._scrollbar.setStyleSheet(
+            "QScrollBar:horizontal {"
+            "  background: #1E1A26; height: 8px; border-radius: 4px;"
+            "}"
+            "QScrollBar::handle:horizontal {"
+            "  background: #5A5066; border-radius: 4px; min-width: 20px;"
+            "}"
+            "QScrollBar::add-line:horizontal,"
+            "QScrollBar::sub-line:horizontal { width: 0; }"
+        )
+
+    def setSeries(self, values, current_label: str = ""):
+        at_end = self._scrollbar.value() >= self._scrollbar.maximum()
+        self._values = list(values)
+        self._current_label = current_label
+        max_scroll = max(0, len(self._values) - self.VIEWPORT)
+        self._scrollbar.setRange(0, max_scroll)
+        if at_end:
+            self._scrollbar.setValue(max_scroll)
+        self.update()
+
+    def paintEvent(self, event):
+        super().paintEvent(event)
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        painter.setPen(QColor("#F5EEF9"))
+        painter.setFont(SiFont.getFont(size=13, weight=QFont.Bold))
+        painter.drawText(QRectF(20, 16, self.width() - 40, 22),
+                         Qt.AlignLeft | Qt.AlignVCenter, self._title)
+        painter.setPen(QColor("#AFA2BE"))
+        painter.setFont(SiFont.getFont(size=10))
+        painter.drawText(QRectF(20, 38, self.width() - 40, 18),
+                         Qt.AlignLeft | Qt.AlignVCenter, self._subtitle)
+
+        chart_rect = QRectF(20, 68, self.width() - 40, 124)
+        painter.setPen(QPen(QColor("#4C4555"), 1))
+        for i in range(4):
+            y = chart_rect.top() + chart_rect.height() * i / 3
+            painter.drawLine(QPointF(chart_rect.left(), y),
+                             QPointF(chart_rect.right(), y))
+
+        start = self._scrollbar.value()
+        values = self._values[start:start + self.VIEWPORT] if self._values else [0.0, 0.0]
+        if len(values) < 2:
+            values = [0.0, 0.0]
+
+        min_v, max_v = min(values), max(values)
+        span = max(max_v - min_v, 1.0)
+        path = QPainterPath()
+        fill_path = QPainterPath()
+        for idx, v in enumerate(values):
+            x = chart_rect.left() + chart_rect.width() * idx / max(1, len(values) - 1)
+            y = chart_rect.bottom() - ((v - min_v) / span) * chart_rect.height()
+            pt = QPointF(x, y)
+            if idx == 0:
+                path.moveTo(pt)
+                fill_path.moveTo(chart_rect.left(), chart_rect.bottom())
+                fill_path.lineTo(pt)
+            else:
+                path.lineTo(pt)
+                fill_path.lineTo(pt)
+        fill_path.lineTo(chart_rect.right(), chart_rect.bottom())
+        fill_path.closeSubpath()
+
+        grad = QLinearGradient(chart_rect.left(), chart_rect.top(),
+                               chart_rect.left(), chart_rect.bottom())
+        a0 = QColor(self._accent); a0.setAlpha(90)
+        a1 = QColor(self._accent); a1.setAlpha(8)
+        grad.setColorAt(0.0, a0)
+        grad.setColorAt(1.0, a1)
+        painter.fillPath(fill_path, grad)
+        painter.setPen(QPen(self._accent, 2.4))
+        painter.drawPath(path)
+
+        painter.setPen(QColor("#F5EEF9"))
+        painter.setFont(SiFont.getFont(size=18, weight=QFont.Bold))
+        painter.drawText(QRectF(20, 200, 160, 22),
+                         Qt.AlignLeft | Qt.AlignVCenter, self._current_label)
+
+        total = len(self._values)
+        if total > self.VIEWPORT:
+            end = min(start + self.VIEWPORT, total)
+            painter.setPen(QColor("#AFA2BE"))
+            painter.setFont(SiFont.getFont(size=10))
+            painter.drawText(QRectF(0, 200, self.width() - 20, 22),
+                             Qt.AlignRight | Qt.AlignVCenter, f"{start + 1}–{end} / {total}")
+
+
 # ── Log panel ──────────────────────────────────────────────────────────────────
 
 class _LogPanel(_PanelCard):
     """Scrollable log viewer with level-filter buttons."""
 
     _FILTER_DEFS = [
-        ("ALL",     "#D0C8E0"),
-        ("ERROR",   "#F2687F"),
-        ("WARN",    "#F5C35B"),
-        ("INFO",    "#8E79D9"),
-        ("SUCCESS", "#5FD69A"),
+        ("ALL",     "#8E79D9", "rgba(142, 121, 217, 0.15)"),
+        ("ERROR",   "#FF6767", "rgba(255, 103, 103, 0.15)"),
+        ("WARN",    "#FFD467", "rgba(255, 212, 103, 0.15)"),
+        ("INFO",    "#5BA3F5", "rgba(91,  163, 245, 0.15)"),
+        ("SUCCESS", "#78E09A", "rgba(120, 224, 154, 0.15)"),
     ]
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self.setFixedSize(932, 340)
-        self._filter_level = "ALL"
+        self._active_filters: set = {"ALL", "ERROR", "WARN", "INFO", "SUCCESS"}
         self._messages: list = []
 
-        # Filter buttons
+        # Filter buttons — neutral default, colored when active
+        _DEFAULT_STYLE = (
+            "QPushButton {"
+            "  color: #6E6380;"
+            "  background: #252030;"
+            "  border: none;"
+            "  border-radius: 6px;"
+            "  font-size: 10px;"
+            "  font-family: 'Segoe UI', sans-serif;"
+            "}"
+            "QPushButton:hover { background: #2C2738; }"
+        )
         x_off = 16
         self._filter_btns: dict = {}
-        for label, color in self._FILTER_DEFS:
+        for label, color, bg in self._FILTER_DEFS:
             btn = QPushButton(label, self)
             btn.setFixedSize(70, 26)
             btn.move(x_off, 12)
             btn.setCheckable(True)
-            btn.setChecked(label == "ALL")
+            btn.setChecked(True)
             btn.setStyleSheet(
-                f"QPushButton {{"
-                f"  color: {color};"
-                f"  background: transparent;"
-                f"  border: 1px solid {color}55;"
-                f"  border-radius: 6px;"
-                f"  font-size: 10px;"
-                f"  font-family: 'Segoe UI', sans-serif;"
-                f"}}"
-                f"QPushButton:checked {{"
-                f"  background: {color}22;"
-                f"  border: 1px solid {color};"
-                f"}}"
-                f"QPushButton:hover {{"
-                f"  background: {color}18;"
-                f"}}"
+                _DEFAULT_STYLE +
+                f"QPushButton:checked {{ color: {color}; background: {bg}; }}"
             )
-            btn.clicked.connect(lambda _=False, lbl=label: self._setFilter(lbl))
+            btn.clicked.connect(lambda _=False, lbl=label: self._toggleFilter(lbl))
             self._filter_btns[label] = btn
             x_off += 76
 
@@ -270,17 +378,31 @@ class _LogPanel(_PanelCard):
         painter.setPen(QPen(QColor("#3A3245"), 1))
         painter.drawLine(12, 47, self.width() - 12, 47)
 
-    def _setFilter(self, level: str):
-        self._filter_level = level
+    def _toggleFilter(self, label: str):
+        if label == "ALL":
+            # ALL toggles all on or all off
+            all_on = all(lbl in self._active_filters for lbl, *_ in self._FILTER_DEFS)
+            if all_on:
+                self._active_filters.clear()
+            else:
+                self._active_filters = {lbl for lbl, *_ in self._FILTER_DEFS}
+        else:
+            if label in self._active_filters:
+                self._active_filters.discard(label)
+                self._active_filters.discard("ALL")
+            else:
+                self._active_filters.add(label)
+                if all(lbl in self._active_filters for lbl, *_ in self._FILTER_DEFS if lbl != "ALL"):
+                    self._active_filters.add("ALL")
         for lbl, btn in self._filter_btns.items():
-            btn.setChecked(lbl == level)
+            btn.setChecked(lbl in self._active_filters)
         self._rebuild()
 
     def addMessage(self, timestamp: str, level: str, message: str):
         self._messages.append((timestamp, level, message))
         if len(self._messages) > 1000:
             self._messages = self._messages[-1000:]
-        if self._filter_level in ("ALL", level):
+        if level in self._active_filters or "ALL" in self._active_filters:
             self._appendLine(timestamp, level, message)
 
     def _appendLine(self, timestamp: str, level: str, message: str):
@@ -304,7 +426,7 @@ class _LogPanel(_PanelCard):
     def _rebuild(self):
         self._text.clear()
         for ts, lvl, msg in self._messages:
-            if self._filter_level == "ALL" or lvl == self._filter_level:
+            if lvl in self._active_filters or "ALL" in self._active_filters:
                 self._appendLine(ts, lvl, msg)
 
     def clear(self):
@@ -325,8 +447,8 @@ class LogsPage(SiPage):
         self._tracker_manager = None
         self._recording = False
         self._latest_stats: dict = {}
-        self._shots_history: deque = deque([0.0] * 60, maxlen=60)
-        self._moves_history: deque = deque([0.0] * 60, maxlen=60)
+        self._shots_history: list = []
+        self._moves_history: list = []
         self._last_shots = 0
         self._last_moves = 0
 
@@ -394,9 +516,9 @@ class LogsPage(SiPage):
 
     def _buildCharts(self):
         self.chart_host = QWidget(self)
-        self.chart_host.setFixedSize(932, 240)
+        self.chart_host.setFixedSize(932, 256)
 
-        self.shots_chart = _LineChartCard(
+        self.shots_chart = _ScrollableLineChartCard(
             "Shots / Interval",
             "Auto-fire events per update cycle",
             "#F2687F",
@@ -404,7 +526,7 @@ class LogsPage(SiPage):
         )
         self.shots_chart.move(0, 0)
 
-        self.moves_chart = _LineChartCard(
+        self.moves_chart = _ScrollableLineChartCard(
             "Mouse Moves / Interval",
             "Aim correction operations per update cycle",
             "#57D4C3",
@@ -442,8 +564,8 @@ class LogsPage(SiPage):
             # Start fresh session
             self.log_panel.clear()
             self._latest_stats.clear()
-            self._shots_history = deque([0.0] * 60, maxlen=60)
-            self._moves_history = deque([0.0] * 60, maxlen=60)
+            self._shots_history = []
+            self._moves_history = []
             self._last_shots = 0
             self._last_moves = 0
             self._refreshMetrics()

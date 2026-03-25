@@ -98,7 +98,7 @@ class VisionTrackerApp(SiliconApplication):
         self.statistics_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
             self.statistics_page,
-            icon=SiGlobal.siui.iconpack.get("ic_fluent_data_pie_filled"),
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_pulse_square_filled"),
             hint="Performance Monitor",
             side="top"
         )
