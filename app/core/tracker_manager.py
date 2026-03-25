@@ -161,6 +161,7 @@ class TrackerWorker(QThread):
     log_message = pyqtSignal(str, str)  # (message, level)
     status_changed = pyqtSignal(str)  # (status)
     lineup_switched = pyqtSignal()  # emitted when lineup_switch hotkey is pressed
+    runtime_stats_changed = pyqtSignal(dict)  # live runtime/session snapshot
 
     def __init__(self, config: dict, window_title: str = None, hotkeys: dict = None, parent=None):
         super().__init__(parent)
@@ -188,6 +189,12 @@ class TrackerWorker(QThread):
         # Overlay display flags (updated in real-time via update_overlay_info)
         self._overlay_info = {}
 
+        # Session/runtime statistics for the Statistics page
+        self._session_started_at = None
+        self._session_stats = {}
+        self._current_runtime = {}
+        self._last_stats_emit_at = 0.0
+
     def update_overlay_info(self, key: str, value):
         """Update a single overlay display flag (takes effect on next frame)."""
         self._overlay_info[key] = value
@@ -196,6 +203,33 @@ class TrackerWorker(QThread):
         """Main tracking loop."""
         self._running = True
         self._stop_requested = False
+        self._session_started_at = time.time()
+        self._session_stats = {
+            "frames_processed": 0,
+            "target_locks": 0,
+            "auto_clicks": 0,
+            "mouse_moves": 0,
+            "pause_count": 0,
+            "resume_count": 0,
+            "calibration_count": 0,
+            "last_calibrated_sensitivity": None,
+        }
+        self._current_runtime = {
+            "status": "starting",
+            "current_fps": 0.0,
+            "target_locked": False,
+            "current_conf": 0.0,
+            "current_dist": 0.0,
+            "current_mode": self.config.get("controller_type", "adrc").upper(),
+            "config_name": self.config.get("name", "Unknown"),
+            "window_title": self.window_title or "Fullscreen",
+            "target_team": self.config.get("target_team", "T"),
+            "operation_mode": self.config.get("operation_mode", "auto_aim_fire"),
+            "target_class": "All",
+            "current_sensitivity": self.config.get("snap_sensitivity", Config.SNAP_SENSITIVITY),
+            "pid_kp": self.config.get("pid_kp", Config.PID_KP),
+        }
+        self._emit_runtime_stats(force=True)
 
         try:
             # Apply configuration
@@ -217,6 +251,8 @@ class TrackerWorker(QThread):
             self.log_message.emit("Tracking system started", "SUCCESS")
             self.log_message.emit("Hotkeys: [Space] Pause/Resume, [Esc] Stop", "INFO")
             self.status_changed.emit("running")
+            self._current_runtime["status"] = "running"
+            self._emit_runtime_stats(force=True)
 
             # Main detection loop
             self._detection_loop()
@@ -227,6 +263,9 @@ class TrackerWorker(QThread):
             self._cleanup()
             self._running = False
             self.status_changed.emit("stopped")
+            self._current_runtime["status"] = "stopped"
+            self._current_runtime["target_locked"] = False
+            self._emit_runtime_stats(force=True)
 
     def _apply_config(self):
         """Apply configuration to Config class."""
@@ -321,6 +360,15 @@ class TrackerWorker(QThread):
         self.log_message.emit(f"Configuration applied: {self.config.get('name', 'Unknown')}", "INFO")
         cls_label = str(Config.TARGET_CLASS_ID) if Config.TARGET_CLASS_ID is not None else "All"
         self.log_message.emit(f"Target class: {cls_label}", "INFO")
+        self._current_runtime.update({
+            "config_name": self.config.get("name", "Unknown"),
+            "target_team": self.config.get("target_team", "T"),
+            "operation_mode": operation_mode,
+            "target_class": cls_label,
+            "current_sensitivity": Config.SNAP_SENSITIVITY,
+            "pid_kp": Config.PID_KP,
+        })
+        self._emit_runtime_stats(force=True)
 
     def _init_components(self):
         """Initialize all tracking components."""
@@ -461,6 +509,8 @@ class TrackerWorker(QThread):
             except Exception:
                 continue
 
+            self._session_stats["frames_processed"] += 1
+
             # Calculate FPS
             fps_counter += 1
             elapsed = time.time() - fps_start_time
@@ -521,6 +571,8 @@ class TrackerWorker(QThread):
 
                         # Target tracking
                         target_id = head_cls
+                        if last_target_id is None:
+                            self._session_stats["target_locks"] += 1
                         if last_target_id is not None and target_id != last_target_id:
                             if self._aim_controller:
                                 self._aim_controller.reset()
@@ -535,10 +587,12 @@ class TrackerWorker(QThread):
                                     time.sleep(0.005)
                                     self._mouse_driver.left_up()
                                     last_click_time = current_time
+                                    self._session_stats["auto_clicks"] += 1
 
                         # Aim control (check AUTO_AIM config)
                         if Config.AUTO_AIM and self._aim_controller:
                             current_mode = self._aim_controller.update(error_x, error_y, target_id)
+                            self._session_stats["mouse_moves"] += 1
                     else:
                         # No target
                         if last_target_id:
@@ -586,6 +640,37 @@ class TrackerWorker(QThread):
                     })
                 except Exception:
                     pass
+
+            self._current_runtime.update({
+                "status": "paused" if self._paused else "running",
+                "current_fps": current_fps,
+                "target_locked": head_x is not None and head_y is not None,
+                "current_conf": current_conf,
+                "current_dist": current_dist,
+                "current_mode": current_mode,
+                "current_sensitivity": Config.SNAP_SENSITIVITY,
+                "pid_kp": Config.PID_KP,
+            })
+            self._emit_runtime_stats()
+
+    def _build_runtime_stats(self) -> dict:
+        uptime_seconds = 0
+        if self._session_started_at is not None:
+            uptime_seconds = max(0, int(time.time() - self._session_started_at))
+
+        data = {
+            "uptime_seconds": uptime_seconds,
+        }
+        data.update(self._session_stats)
+        data.update(self._current_runtime)
+        return data
+
+    def _emit_runtime_stats(self, force: bool = False):
+        now = time.time()
+        if not force and now - self._last_stats_emit_at < 0.25:
+            return
+        self._last_stats_emit_at = now
+        self.runtime_stats_changed.emit(self._build_runtime_stats())
 
     def _read_overlay_info(self) -> dict:
         """Read overlay display flags from app_settings.json."""
@@ -646,6 +731,8 @@ class TrackerWorker(QThread):
             self.log_message.emit("Cannot calibrate: mouse driver not loaded", "ERROR")
             return
         self._calibrating = True
+        self._session_stats["calibration_count"] += 1
+        self._emit_runtime_stats(force=True)
         self.log_message.emit("Starting calibration - aim at a static target", "INFO")
 
     def _send_calibration_overlay(self, cx, cy, x1, y1, x2, y2, calib_move=None):
@@ -712,7 +799,7 @@ class TrackerWorker(QThread):
             x1 = max(0, cx - Config.FOV_WIDTH // 2)
             y1 = max(0, cy - Config.FOV_HEIGHT // 2)
             x2 = min(w, cx + Config.FOV_WIDTH // 2)
-            y2 = min(h, cx + Config.FOV_HEIGHT // 2)
+            y2 = min(h, cy + Config.FOV_HEIGHT // 2)
 
             boxes = self._detector.detect(frame, roi=(x1, y1, x2, y2))
             # Use None to target all classes during calibration
@@ -799,6 +886,10 @@ class TrackerWorker(QThread):
             self._aim_controller.snap_sensitivity = Config.SNAP_SENSITIVITY
             self._aim_controller.pid.kp = Config.PID_KP
 
+        self._session_stats["last_calibrated_sensitivity"] = Config.SNAP_SENSITIVITY
+        self._current_runtime["current_sensitivity"] = Config.SNAP_SENSITIVITY
+        self._current_runtime["pid_kp"] = Config.PID_KP
+        self._emit_runtime_stats(force=True)
         self.log_message.emit(f"Calibration complete! SENS={Config.SNAP_SENSITIVITY:.3f}, Kp={Config.PID_KP:.3f}", "SUCCESS")
 
     def _cleanup(self):
@@ -822,12 +913,18 @@ class TrackerWorker(QThread):
     def pause(self):
         """Pause the tracking loop."""
         self._paused = True
+        self._session_stats["pause_count"] += 1
+        self._current_runtime["status"] = "paused"
+        self._emit_runtime_stats(force=True)
         self.log_message.emit("Tracking paused", "WARN")
         self.status_changed.emit("paused")
 
     def resume(self):
         """Resume the tracking loop."""
         self._paused = False
+        self._session_stats["resume_count"] += 1
+        self._current_runtime["status"] = "running"
+        self._emit_runtime_stats(force=True)
         self.log_message.emit("Tracking resumed", "SUCCESS")
         self.status_changed.emit("running")
 
@@ -850,11 +947,35 @@ class TrackerManager(QObject):
     log_message = pyqtSignal(str, str)  # (message, level)
     status_changed = pyqtSignal(str)  # (status: running/paused/stopped)
     lineup_switched = pyqtSignal()  # forwarded from worker
+    runtime_stats_changed = pyqtSignal(dict)  # forwarded live runtime/session snapshot
 
     def __init__(self, parent=None):
         super().__init__(parent)
         self._worker = None
         self._hotkeys = DEFAULT_HOTKEYS.copy()
+        self._latest_runtime_stats = {
+            "status": "stopped",
+            "config_name": "Unknown",
+            "window_title": "Fullscreen",
+            "target_team": "T",
+            "operation_mode": "auto_aim_fire",
+            "target_class": "All",
+            "current_mode": "ADRC",
+            "current_fps": 0.0,
+            "current_conf": 0.0,
+            "current_dist": 0.0,
+            "target_locked": False,
+            "frames_processed": 0,
+            "target_locks": 0,
+            "auto_clicks": 0,
+            "pause_count": 0,
+            "resume_count": 0,
+            "calibration_count": 0,
+            "uptime_seconds": 0,
+            "current_sensitivity": Config.SNAP_SENSITIVITY,
+            "last_calibrated_sensitivity": None,
+            "pid_kp": Config.PID_KP,
+        }
         self._load_hotkeys_from_settings()
 
     def _load_hotkeys_from_settings(self):
@@ -886,6 +1007,7 @@ class TrackerManager(QObject):
         self._worker.log_message.connect(self.log_message)
         self._worker.status_changed.connect(self.status_changed)
         self._worker.lineup_switched.connect(self.lineup_switched)
+        self._worker.runtime_stats_changed.connect(self._on_runtime_stats_changed)
         self._worker.start()
 
     def pause(self):
@@ -927,6 +1049,77 @@ class TrackerManager(QObject):
         label = str(class_id) if class_id is not None else "All"
         self.log_message.emit(f"Target class changed to: {label}", "INFO")
 
+    def set_target_team(self, team: str):
+        """Set target team during runtime and update class filtering immediately."""
+        team = (team or "ALL").upper()
+        if team not in {"CT", "T", "ALL"}:
+            team = "ALL"
+
+        if self._worker and getattr(self._worker, "config", None) is not None:
+            self._worker.config["target_team"] = team
+
+        aim_part = "head"
+        if self._worker and getattr(self._worker, "config", None):
+            aim_part = self._worker.config.get("aim_part", "head")
+
+        target_class_id = None
+        prefer_class_ids = None
+        label = "All"
+
+        try:
+            import json as _json
+            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            cfg_path = os.path.join(app_dir, "data", "class_config.json")
+            with open(cfg_path, "r", encoding="utf-8") as f:
+                class_names = _json.load(f).get("class_names", [])
+
+            team_lower = None if team == "ALL" else team.lower()
+            matching_ids = [
+                idx for idx, name in enumerate(class_names)
+                if team_lower is None or name.lower().startswith(f"{team_lower}_")
+            ]
+            head_ids = [idx for idx in matching_ids if "head" in class_names[idx].lower()]
+            body_ids = [idx for idx in matching_ids if "body" in class_names[idx].lower()]
+
+            if aim_part == "head":
+                if head_ids:
+                    target_class_id = head_ids[0] if len(head_ids) == 1 else head_ids
+                    label = ", ".join(class_names[idx] for idx in head_ids)
+            elif aim_part == "body":
+                if body_ids:
+                    target_class_id = body_ids[0] if len(body_ids) == 1 else body_ids
+                    label = ", ".join(class_names[idx] for idx in body_ids)
+            elif aim_part == "head_priority":
+                target_class_id = matching_ids or None
+                prefer_class_ids = head_ids or None
+                if matching_ids:
+                    label = ", ".join(class_names[idx] for idx in matching_ids)
+            else:
+                target_class_id = matching_ids or None
+                if matching_ids:
+                    label = ", ".join(class_names[idx] for idx in matching_ids)
+
+            if team == "ALL" and aim_part == "head_priority" and not matching_ids:
+                label = "All"
+        except Exception:
+            if team == "ALL":
+                target_class_id = None
+                prefer_class_ids = None
+                label = "All"
+
+        Config.TARGET_CLASS_ID = target_class_id
+        Config.PREFER_CLASS_IDS = prefer_class_ids
+
+        if self._worker:
+            self._worker._current_runtime["target_team"] = team
+            self._worker._current_runtime["target_class"] = label
+
+        self._latest_runtime_stats["target_team"] = team
+        self._latest_runtime_stats["target_class"] = label
+        self.runtime_stats_changed.emit(dict(self._latest_runtime_stats))
+        self.log_message.emit(f"Target team changed to: {team}", "INFO")
+        self.log_message.emit(f"Target class changed to: {label}", "INFO")
+
     # === Hotkey configuration interface ===
 
     def get_hotkeys(self) -> dict:
@@ -954,3 +1147,12 @@ class TrackerManager(QObject):
         """Update an overlay display flag in real-time (takes effect on next frame)."""
         if self._worker:
             self._worker.update_overlay_info(key, value)
+
+    def get_runtime_stats(self) -> dict:
+        """Return the latest cached runtime/session snapshot."""
+        return dict(self._latest_runtime_stats)
+
+    def _on_runtime_stats_changed(self, stats: dict):
+        """Cache and forward runtime statistics updates."""
+        self._latest_runtime_stats.update(stats)
+        self.runtime_stats_changed.emit(dict(self._latest_runtime_stats))

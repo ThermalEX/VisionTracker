@@ -93,17 +93,21 @@ class VisionTrackerApp(SiliconApplication):
             side="top"
         )
 
-        # Statistics page - top
+        # Performance Monitor page - top
+        self.statistics_page = StatisticsPage(self)
+        self.statistics_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
-            StatisticsPage(self),
+            self.statistics_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_data_pie_filled"),
-            hint="Statistics",
+            hint="Performance Monitor",
             side="top"
         )
 
         # Logs page - top
+        self.logs_page = LogsPage(self)
+        self.logs_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
-            LogsPage(self),
+            self.logs_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_document_text_clock_filled"),
             hint="Logs",
             side="top"
