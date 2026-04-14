@@ -116,6 +116,15 @@ def _local_ip_hint() -> str:
         return ""
 
 
+def _is_tcp_endpoint_open(host_port: str, timeout: float = 0.25) -> bool:
+    try:
+        host, port = host_port.rsplit(":", 1)
+        with socket.create_connection((host, int(port)), timeout=timeout):
+            return True
+    except Exception:
+        return False
+
+
 class _MdnsScanThread(QThread):
     finished_scan = pyqtSignal(list, list, list)
 
@@ -507,8 +516,9 @@ class PhoneCameraPage(SiPage):
             self.device_combo.addItem(device)
 
         wireless_devices = [device for device in devices if ":" in device]
+        reachable_hosts = [host for host in conn_hosts if _is_tcp_endpoint_open(host)]
         merged_conn: list[str] = []
-        for host in [*wireless_devices, *conn_hosts]:
+        for host in [*wireless_devices, *reachable_hosts]:
             if host not in merged_conn:
                 merged_conn.append(host)
 

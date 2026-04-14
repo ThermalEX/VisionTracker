@@ -151,25 +151,26 @@ class VisionTrackerApp(SiliconApplication):
         _nav.container.widgets_top.remove(_btn)
         _nav.container.arrangeWidget()
 
-        # Help page - top
+        # Help page - bottom
         self.help_page_index = self.layerMain().page_view.stacked_container.widgetsAmount()
         self.layerMain().addPage(
             HelpPage(self),
             icon=SiGlobal.siui.iconpack.get("ic_fluent_chat_help_filled"),
             hint="Help",
-            side="top"
+            side="bottom"
         )
         self.help_button_index = len(_nav.buttons) - 1
 
-        # Settings page - top (last in top section)
+        # Settings page - bottom
         self.settings_page = SettingsPage(self)
         self.settings_page.setTrackerManager(self.tracker_manager)
         self.layerMain().addPage(
             self.settings_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_settings_filled"),
             hint="Settings",
-            side="top"
+            side="bottom"
         )
+        self.settings_button_index = len(_nav.buttons) - 1
 
         # User page - 添加到page_view但不在侧边栏显示按钮
         self.user_page = UserPage(self)
@@ -183,6 +184,7 @@ class VisionTrackerApp(SiliconApplication):
             hint="About",
             side="bottom"
         )
+        self.about_button_index = len(_nav.buttons) - 1
 
         # Admin page - bottom (above About)
         self.admin_page = AdminPage(self)
@@ -197,6 +199,14 @@ class VisionTrackerApp(SiliconApplication):
         self.admin_button_index = len(self.layerMain().page_view.page_navigator.buttons) - 1
         # Hide admin page button by default
         self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
+        _nav.container.widgets_bottom = [
+            _nav.buttons[self.about_button_index],
+            _nav.buttons[self.admin_button_index],
+            _nav.buttons[self.settings_button_index],
+            _nav.buttons[self.help_button_index],
+        ]
+        _nav.container.arrangeWidget()
+        self._setAdminButtonVisible(False)
 
         # 设置标题栏用户按钮图标并连接点击事件
         self.layerMain().setUserButtonIcon(SiGlobal.siui.iconpack.get("ic_fluent_person_filled"))
@@ -223,7 +233,6 @@ class VisionTrackerApp(SiliconApplication):
         buttons = navigator.buttons
         training_btn = buttons[self.training_button_index]
         custom_tracker_btn = buttons[self.custom_tracker_button_index]
-        help_btn = buttons[self.help_button_index]
 
         # Stop any in-progress animation
         if hasattr(self, '_advanced_mode_anim') and self._advanced_mode_anim is not None:
@@ -231,11 +240,10 @@ class VisionTrackerApp(SiliconApplication):
             self._advanced_mode_anim = None
 
         if enabled:
-            # Insert into layout before Help button
-            if training_btn not in container.widgets_top and help_btn in container.widgets_top:
-                pos = container.widgets_top.index(help_btn)
-                container.widgets_top.insert(pos, training_btn)
-                container.widgets_top.insert(pos + 1, custom_tracker_btn)
+            if training_btn not in container.widgets_top:
+                container.widgets_top.append(training_btn)
+            if custom_tracker_btn not in container.widgets_top:
+                container.widgets_top.append(custom_tracker_btn)
             for btn in (training_btn, custom_tracker_btn):
                 btn.setFixedHeight(0)
                 btn.show()
@@ -311,6 +319,26 @@ class VisionTrackerApp(SiliconApplication):
         except Exception:
             pass
 
+    def _setAdminButtonVisible(self, visible: bool):
+        navigator = self.layerMain().page_view.page_navigator
+        container = navigator.container
+        buttons = navigator.buttons
+        admin_btn = buttons[self.admin_button_index]
+
+        if visible:
+            if admin_btn not in container.widgets_bottom:
+                if self.about_button_index < len(buttons) and buttons[self.about_button_index] in container.widgets_bottom:
+                    pos = container.widgets_bottom.index(buttons[self.about_button_index]) + 1
+                else:
+                    pos = 0
+                container.widgets_bottom.insert(pos, admin_btn)
+            admin_btn.show()
+        else:
+            if admin_btn in container.widgets_bottom:
+                container.widgets_bottom.remove(admin_btn)
+            admin_btn.hide()
+        container.arrangeWidget()
+
     def _initAuth(self):
         """Initialize authentication system."""
         # Initialize database
@@ -354,9 +382,9 @@ class VisionTrackerApp(SiliconApplication):
             self.user_page.setUser(user)
             # Show admin page button if user is admin (id == 1)
             if user.id == 1:
-                self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].show()
+                self._setAdminButtonVisible(True)
             else:
-                self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
+                self._setAdminButtonVisible(False)
             # Flag to show notifications after window is visible
             self._auto_login_user = user
         else:
@@ -372,9 +400,9 @@ class VisionTrackerApp(SiliconApplication):
 
         # Show admin page button if user is admin (id == 1)
         if user.id == 1:
-            self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].show()
+            self._setAdminButtonVisible(True)
         else:
-            self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
+            self._setAdminButtonVisible(False)
 
         # Reset "don't show again" setting on fresh login
         settings = QSettings("VisionTracker", "App")
@@ -496,7 +524,7 @@ class VisionTrackerApp(SiliconApplication):
         """Logout current user."""
         self.session_manager.clear_session()
         self.current_user = None
-        self.layerMain().page_view.page_navigator.buttons[self.admin_button_index].hide()
+        self._setAdminButtonVisible(False)
         self.layer_login.showLayer()
 
     def showEvent(self, event):

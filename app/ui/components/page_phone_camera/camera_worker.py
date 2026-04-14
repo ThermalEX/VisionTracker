@@ -121,11 +121,32 @@ def adb_disconnect(adb_path: str, host_port: str | None = None) -> str:
     return ((proc.stdout or "") + (proc.stderr or "")).strip()
 
 
+def _scan_adb_mdns_services(adb_path: str) -> tuple[list[str], list[str]]:
+    try:
+        proc = run_cmd([adb_path, "mdns", "services"], timeout=8)
+    except Exception:
+        return [], []
+
+    pair_hosts: list[str] = []
+    conn_hosts: list[str] = []
+    for line in ((proc.stdout or "") + "\n" + (proc.stderr or "")).splitlines():
+        match = re.search(r"(_adb-tls-(?:pairing|connect)\._tcp)\s+([0-9.]+:\d+)", line)
+        if not match:
+            continue
+        service_type, host = match.groups()
+        bucket = pair_hosts if "pairing" in service_type else conn_hosts
+        if host not in bucket:
+            bucket.append(host)
+    return pair_hosts, conn_hosts
+
+
 def mdns_scan_adb(timeout: float = 2.0) -> tuple[list[str], list[str]]:
+    adb_pair_hosts, adb_conn_hosts = _scan_adb_mdns_services(find_exe("adb"))
+
     try:
         from zeroconf import ServiceBrowser, ServiceListener, Zeroconf
     except Exception:
-        return [], []
+        return adb_pair_hosts, adb_conn_hosts
 
     pair_hosts: list[str] = []
     conn_hosts: list[str] = []
@@ -169,6 +190,12 @@ def mdns_scan_adb(timeout: float = 2.0) -> tuple[list[str], list[str]]:
     finally:
         if zc is not None:
             zc.close()
+    for host in adb_pair_hosts:
+        if host not in pair_hosts:
+            pair_hosts.append(host)
+    for host in adb_conn_hosts:
+        if host not in conn_hosts:
+            conn_hosts.append(host)
     return pair_hosts, conn_hosts
 
 
@@ -289,6 +316,7 @@ class CameraWorker(QObject):
 
         server_proc = None
         cap = None
+        reader_thread = None
         try:
             self.log.emit(f"Starting camera (id={self._camera_id}, size={self._camera_size})", "INFO")
             subprocess.run(self._adb_base(adb_path) + ["push", str(server_path), DEVICE_SERVER_PATH],
@@ -313,21 +341,46 @@ class CameraWorker(QObject):
                 cap = cv2.VideoCapture(f"tcp://127.0.0.1:{LOCAL_PORT}", cv2.CAP_FFMPEG)
             if not cap.isOpened():
                 raise RuntimeError("Could not open scrcpy stream")
+            cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
 
             self.status_changed.emit("running")
             self.log.emit("Camera stream opened", "SUCCESS")
+            latest_lock = threading.Lock()
+            latest_frame = None
+            latest_id = 0
+
+            def _read_latest_frame():
+                nonlocal latest_frame, latest_id
+                while not self._stop_event.is_set():
+                    ok, frame = cap.read()
+                    if ok and frame is not None:
+                        with latest_lock:
+                            latest_frame = frame
+                            latest_id += 1
+                    else:
+                        time.sleep(0.005)
+
+            reader_thread = threading.Thread(target=_read_latest_frame, daemon=True)
+            reader_thread.start()
+            processed_id = -1
             while not self._stop_event.is_set():
                 if server_proc.poll() is not None:
                     raise RuntimeError("scrcpy-server exited")
-                ok, frame = cap.read()
-                if ok and frame is not None:
-                    self._process_frame(frame)
-                else:
+                with latest_lock:
+                    frame = latest_frame
+                    frame_id = latest_id
+                if frame is None or frame_id == processed_id:
                     time.sleep(0.005)
+                    continue
+                processed_id = frame_id
+                self._process_frame(frame)
         except Exception as exc:
             self.log.emit(f"Camera stream error: {exc}", "ERROR")
             self.status_changed.emit("error")
         finally:
+            self._stop_event.set()
+            if reader_thread is not None and reader_thread.is_alive():
+                reader_thread.join(timeout=1)
             if cap is not None:
                 cap.release()
             if server_proc is not None:
