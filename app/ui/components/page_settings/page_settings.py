@@ -5,16 +5,36 @@ import json
 
 from PyQt5.QtCore import Qt, pyqtSignal
 from PyQt5.QtGui import QFont
+from PyQt5.QtWidgets import QPushButton
 
 from siui.components import SiDenseHContainer, SiLabel, SiTitledWidgetGroup, SiOptionCardLinear
 from siui.components.page import SiPage
 from siui.components.widgets.button import SiSwitch
-from siui.components.button import SiPushButtonRefactor
 from siui.core import SiColor, SiGlobal
 from siui.gui import SiFont
 
 
-class KeyCaptureButton(SiPushButtonRefactor):
+BUTTON_STYLE = """
+QPushButton {
+    background-color: #201d23;
+    border: 1px solid #3a3540;
+    border-radius: 6px;
+    color: #F0EEF2;
+    padding: 0 14px;
+    font-family: "Segoe UI", "Microsoft YaHei";
+    font-size: 13px;
+}
+QPushButton:hover {
+    background-color: #2b2630;
+    border: 1px solid #D087DF;
+}
+QPushButton:pressed {
+    background-color: #352f3c;
+}
+"""
+
+
+class KeyCaptureButton(QPushButton):
     """Button that captures a keyboard shortcut when clicked.
 
     Click to enter capture mode, press any key (or combo) to bind it.
@@ -43,6 +63,7 @@ class KeyCaptureButton(SiPushButtonRefactor):
         self._current_key = ""
         self._capturing = False
         self.setFocusPolicy(Qt.StrongFocus)
+        self.setStyleSheet(BUTTON_STYLE)
         self.clicked.connect(self._startCapture)
         self.setText("None")
 

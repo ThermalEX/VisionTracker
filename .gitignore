@@ -9,6 +9,8 @@ __pycache__/
 yolo11n.pt
 yolo11x.pt
 yolo11m.pt
+yolo26x.pt
+yolo26m.pt
 app/models/user/
 *.onnx
 app/data/configs/*

@@ -7,7 +7,6 @@ from PyQt5.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, 
 from PyQt5.QtWidgets import QPushButton, QScrollBar, QWidget, QTextEdit
 
 from siui.components import SiLabel, SiSimpleButton, SiTitledWidgetGroup
-from siui.components.button import SiPushButtonRefactor as SiPushButton
 from siui.components.page import SiPage
 from siui.core import SiColor, SiGlobal
 from siui.gui import SiFont
@@ -19,6 +18,25 @@ LOG_LEVEL_COLORS = {
     "SUCCESS": "#78E09A",
     "INFO":    "#5BA3F5",
 }
+
+BUTTON_STYLE = """
+QPushButton {
+    background-color: #201d23;
+    border: 1px solid #3a3540;
+    border-radius: 6px;
+    color: #F0EEF2;
+    padding: 0 14px;
+    font-family: "Segoe UI", "Microsoft YaHei";
+    font-size: 13px;
+}
+QPushButton:hover {
+    background-color: #2b2630;
+    border: 1px solid #D087DF;
+}
+QPushButton:pressed {
+    background-color: #352f3c;
+}
+"""
 
 
 # ── Shared card primitives ─────────────────────────────────────────────────────
@@ -482,9 +500,10 @@ class LogsPage(SiPage):
         subtitle_label.setTextColor(self.getColor(SiColor.TEXT_D))
         subtitle_label.setText("Real-time tracking logs with session statistics and charts")
 
-        self.record_button = SiPushButton(self.hero)
+        self.record_button = QPushButton(self.hero)
         self.record_button.setGeometry(682, 30, 150, 40)
-        self.record_button.setText("▶  Start Recording")
+        self.record_button.setStyleSheet(BUTTON_STYLE)
+        self.record_button.setText("Start Recording")
         self.record_button.clicked.connect(self._toggleRecording)
 
         self.status_badge = SiLabel(self.hero)
@@ -556,7 +575,7 @@ class LogsPage(SiPage):
     def _toggleRecording(self):
         self._recording = not self._recording
         if self._recording:
-            self.record_button.setText("■  Stop Recording")
+            self.record_button.setText("Stop Recording")
             self.status_badge.setText("● REC")
             self.status_badge.setStyleSheet(
                 "background: #3D1A20; border-radius: 8px; color: #F2687F;"
@@ -570,7 +589,7 @@ class LogsPage(SiPage):
             self._last_moves = 0
             self._refreshMetrics()
         else:
-            self.record_button.setText("▶  Start Recording")
+            self.record_button.setText("Start Recording")
             self.status_badge.setText("IDLE")
             self.status_badge.setStyleSheet(
                 f"background: {SiGlobal.siui.colors['INTERFACE_BG_B']};"

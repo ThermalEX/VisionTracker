@@ -17,7 +17,7 @@ from siui.templates.application.components.layer.layer_login import LayerLogin
 from siui.templates.application.components.layer.layer_right_message_sidebar.messagebox import SiSideMessageBox
 
 from . import icons
-from .components import HomePage, AboutPage, AdminPage, UserPage, ConfigPage, SettingsPage, StatisticsPage, LogsPage, HelpPage, TrainingPage, CustomTrackerPage
+from .components import HomePage, AboutPage, AdminPage, UserPage, ConfigPage, SettingsPage, StatisticsPage, LogsPage, PhoneCameraPage, HelpPage, TrainingPage, CustomTrackerPage
 
 from auth import DatabaseManager, SessionManager, EmailService
 from auth.config import AuthConfig
@@ -110,6 +110,15 @@ class VisionTrackerApp(SiliconApplication):
             self.logs_page,
             icon=SiGlobal.siui.iconpack.get("ic_fluent_document_text_clock_filled"),
             hint="Logs",
+            side="top"
+        )
+
+        # Phone Camera page - top
+        self.phone_camera_page = PhoneCameraPage(self)
+        self.layerMain().addPage(
+            self.phone_camera_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_camera_filled"),
+            hint="Phone Camera",
             side="top"
         )
 
