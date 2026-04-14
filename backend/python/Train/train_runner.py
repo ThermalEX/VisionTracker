@@ -20,6 +20,19 @@ from config import TrainConfig
 from modules.my_trainer import train_model
 
 
+def _print_environment_summary():
+    print(f"Python executable : {sys.executable}")
+    try:
+        import torch
+        print(f"PyTorch           : {torch.__version__}")
+        print(f"PyTorch CUDA      : {torch.version.cuda}")
+        print(f"CUDA available    : {torch.cuda.is_available()}")
+        if torch.cuda.is_available():
+            print(f"CUDA device       : {torch.cuda.get_device_name(0)}")
+    except Exception as e:
+        print(f"PyTorch check     : failed ({e})")
+
+
 def _patch_torch_save():
     """Fix Python 3.13 + ultralytics BytesIO compatibility bug.
 
@@ -75,6 +88,7 @@ def main():
 
     # Apply torch.save fix before ultralytics is used
     _patch_torch_save()
+    _print_environment_summary()
 
     # Create TrainConfig and override with GUI values
     config = TrainConfig(create_dirs=False)

@@ -1068,6 +1068,7 @@ class TrainingPage(SiPage):
         config["epochs"] = self.epochs.value()
         config["batch_size"] = self.batch_size.value()
         config["num_workers"] = self.num_workers.value()
+        config["device"] = "auto"
         config["learning_rate"] = self.learning_rate.value()
         config["weight_decay"] = self.weight_decay.value()
         config["momentum"] = self.momentum.value()

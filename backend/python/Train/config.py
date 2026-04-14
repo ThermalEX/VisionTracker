@@ -21,6 +21,9 @@ class TrainConfig:
     # 数据加载线程数
     num_workers = 4
 
+    # Training device: "auto" selects GPU 0 when CUDA is available, otherwise CPU.
+    device = "auto"
+
     # 类别数量
     num_classes = 4
 

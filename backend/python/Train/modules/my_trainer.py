@@ -44,7 +44,11 @@ class YOLOTrainer:
         self.cfg = config
 
         # 设备
-        self.device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
+        requested_device = str(getattr(config, "device", "auto") or "auto").strip().lower()
+        if requested_device in ("", "auto"):
+            self.device = "0" if torch.cuda.is_available() else "cpu"
+        else:
+            self.device = requested_device
         print(f"Device           : {self.device}")
 
         # 创建模型
@@ -55,7 +59,7 @@ class YOLOTrainer:
         )
 
         # 移动到设备
-        self.model = self.model.to(self.device)
+        self.model = self.model.to(torch.device("cuda:0" if self.device == "0" else self.device))
 
         # 加载数据集配置
         print("Dataset Config   : Loading...")
