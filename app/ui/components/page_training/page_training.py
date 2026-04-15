@@ -919,7 +919,7 @@ class TrainingPage(SiPage):
         chart_card.body().addWidget(loss_label)
 
         self.loss_chart = SiTrendChart(self)
-        self.loss_chart.setFixedHeight(200)
+        self.loss_chart.setFixedHeight(300)
         self.loss_chart.setXTickNameFunc(lambda x: f"{int(x)}")
         self.loss_chart.setYTickNameFunc(lambda y: f"{y:.3f}")
         self.loss_chart.setToolTipFunc(lambda x, y: f"Epoch {int(x)}\nLoss: {y:.4f}")
@@ -936,7 +936,7 @@ class TrainingPage(SiPage):
         chart_card.body().addWidget(map_label)
 
         self.map_chart = SiTrendChart(self)
-        self.map_chart.setFixedHeight(200)
+        self.map_chart.setFixedHeight(300)
         self.map_chart.setXTickNameFunc(lambda x: f"{int(x)}")
         self.map_chart.setYTickNameFunc(lambda y: f"{y:.2f}")
         self.map_chart.setToolTipFunc(lambda x, y: f"Epoch {int(x)}\nmAP@0.5: {y:.4f}")

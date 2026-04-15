@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import os
 import socket
+import time
+import math
 
 import cv2
 import numpy as np
@@ -13,6 +15,7 @@ from PyQt5.QtWidgets import QCheckBox, QGridLayout, QHBoxLayout, QLineEdit, QPus
 
 from siui.components import SiDenseHContainer, SiDenseVContainer, SiLabel, SiTitledWidgetGroup
 from siui.components.button import SiFlatButton
+from siui.components.combobox.combobox import SiComboBox
 from siui.components.combobox_ import SiCapsuleComboBox
 from siui.components.container import SiTriSectionFlatCard
 from siui.components.page import SiPage
@@ -157,7 +160,27 @@ class PhoneCameraPage(SiPage):
         self._detector = None
         self._found_models: list[str] = []
         self._camera_ids: list[str] = []
+        self._camera_labels: list[str] = []
         self._class_checkboxes: list[tuple[QCheckBox, int]] = []
+        self._preview_rotation = 0
+        self._preview_max_width = 720
+        self._preview_max_height = 405
+        self._last_preview_ms = 0
+        self._crop_slots: list[tuple[QWidget, SiLabel, SiLabel]] = []
+        self._crops_hold_ms = 400
+        self._stable_crops: list[dict] = []
+
+        self._recording = False
+        self._record_preview_writer = None
+        self._record_crops_writer = None
+        self._record_crops_size: tuple[int, int] | None = None
+        self._record_crops_mode: str | None = None
+        self._record_preview_path = ""
+        self._record_crops_path = ""
+        self._record_label_boxes: dict[str, QCheckBox] = {}
+        self._selected_target: dict | None = None
+        self._selected_target_hold_ms = 600
+        self._last_display_crops: list[dict] = []
 
         self.titled_group = SiTitledWidgetGroup(self)
         self.titled_group.setSpacing(16)
@@ -304,6 +327,7 @@ class PhoneCameraPage(SiPage):
         self.cam_combo.setFixedSize(240, 32)
         self._hideComboTitle(self.cam_combo)
         self.cam_combo.setEditable(False)
+        self.cam_combo.addItem("(no cameras)")
         cam_row.addWidget(self.cam_combo, side="left")
         self.btn_scan_cams = SiFlatButton(self)
         self.btn_scan_cams.setFixedSize(28, 28)
@@ -317,13 +341,13 @@ class PhoneCameraPage(SiPage):
         size_box.setFixedSize(220, 84)
         size_box.setSpacing(4)
         size_box.addWidget(self._mkLabel("Resolution"), side="top")
-        self.size_combo = SiCapsuleComboBox(self)
-        self.size_combo.setFixedSize(200, 32)
-        self._hideComboTitle(self.size_combo)
-        self.size_combo.setEditable(False)
-        for item in ("1920x1080", "1280x720", "960x540", "640x480"):
-            self.size_combo.addItem(item)
-        self.size_combo.setCurrentIndex(1)
+        self.size_combo = SiComboBox(self)
+        self.size_combo.resize(200, 32)
+        self._resolution_options = ["1920x1080", "1280x720", "960x540", "640x480"]
+        for item in self._resolution_options:
+            self.size_combo.menu().addOption(item, value=item)
+        self.size_combo.menu().setIndex(1)
+        self.size_combo.value_label.setText(self._resolution_options[1])
         size_box.addWidget(self.size_combo, side="top")
         row.addWidget(size_box, side="left")
         card.body().addWidget(row)
@@ -387,7 +411,6 @@ class PhoneCameraPage(SiPage):
         row = SiDenseHContainer(self)
         row.setFixedHeight(40)
         row.setSpacing(8)
-        row.addWidget(self._mkLabel("Model"), side="left")
         self.model_combo = SiCapsuleComboBox(self)
         self.model_combo.setFixedSize(320, 32)
         self.model_combo.setTitle("Model File")
@@ -442,20 +465,97 @@ class PhoneCameraPage(SiPage):
         vbox.setContentsMargins(0, 0, 0, 0)
         vbox.setSpacing(12)
 
-        self.preview_label = SiLabel(wrapper)
-        self.preview_label.setFixedSize(720, 405)
-        self.preview_label.setStyleSheet(
-            "background-color: #000000;"
-            "border: 1px solid #4a4452;"
+        self.preview_frame = QWidget(wrapper)
+        self.preview_frame.setFixedSize(self._preview_max_width, self._preview_max_height)
+        self.preview_frame.setStyleSheet(
+            f"background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']};"
+            "border: 1px solid #3a3540;"
             "border-radius: 6px;"
         )
+        preview_layout = QVBoxLayout(self.preview_frame)
+        preview_layout.setContentsMargins(1, 1, 1, 1)
+        preview_layout.setSpacing(0)
+        self.preview_label = SiLabel(self.preview_frame)
+        self.preview_label.setStyleSheet(f"background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']}; border: none;")
         self.preview_label.setAlignment(Qt.AlignCenter)
-        self.preview_label.setTextColor("#FFFFFF")
+        self.preview_label.setTextColor(self.getColor(SiColor.TEXT_D))
         self.preview_label.setText("No signal")
-        vbox.addWidget(self.preview_label)
+        preview_layout.addWidget(self.preview_label)
+        vbox.addWidget(self.preview_frame)
+
+        rotate_row = SiDenseHContainer(wrapper)
+        rotate_row.setFixedHeight(44)
+        rotate_row.setSpacing(12)
+        self.btn_rotate_left = self._mkButton("Rotate Left", 120)
+        self.btn_rotate_left.setFixedHeight(36)
+        self.btn_rotate_left.clicked.connect(lambda: self._rotatePreview(-90))
+        rotate_row.addWidget(self.btn_rotate_left, side="left")
+        self.btn_rotate_right = self._mkButton("Rotate Right", 120)
+        self.btn_rotate_right.setFixedHeight(36)
+        self.btn_rotate_right.clicked.connect(lambda: self._rotatePreview(90))
+        rotate_row.addWidget(self.btn_rotate_right, side="left")
+        vbox.addWidget(rotate_row)
+
+        rec_panel = QWidget(wrapper)
+        rec_panel_layout = QVBoxLayout(rec_panel)
+        rec_panel_layout.setContentsMargins(0, 0, 0, 0)
+        rec_panel_layout.setSpacing(6)
+
+        rec_row_1 = SiDenseHContainer(wrapper)
+        rec_row_1.setFixedHeight(34)
+        rec_row_1.setSpacing(12)
+        self.rec_preview_cb = QCheckBox("Preview", wrapper)
+        self.rec_preview_cb.setStyleSheet(CHECKBOX_STYLE)
+        self.rec_preview_cb.setChecked(True)
+        self.rec_preview_cb.stateChanged.connect(lambda *_: self._onRecordModeChanged())
+        rec_row_1.addWidget(self.rec_preview_cb, side="left")
+        self.rec_crops_cb = QCheckBox("Detected Crops", wrapper)
+        self.rec_crops_cb.setStyleSheet(CHECKBOX_STYLE)
+        self.rec_crops_cb.setChecked(False)
+        self.rec_crops_cb.stateChanged.connect(lambda *_: self._onRecordModeChanged())
+        rec_row_1.addWidget(self.rec_crops_cb, side="left")
+        self.rec_selected_only_cb = QCheckBox("Selected Target Only", wrapper)
+        self.rec_selected_only_cb.setStyleSheet(CHECKBOX_STYLE)
+        self.rec_selected_only_cb.setChecked(False)
+        self.rec_selected_only_cb.stateChanged.connect(lambda *_: self._onRecordModeChanged())
+        rec_row_1.addWidget(self.rec_selected_only_cb, side="left")
+        rec_panel_layout.addWidget(rec_row_1)
+
+        rec_row_2 = QWidget(wrapper)
+        rec_row_2.setFixedHeight(36)
+        rec_row_2_layout = QHBoxLayout(rec_row_2)
+        rec_row_2_layout.setContentsMargins(0, 0, 0, 0)
+        rec_row_2_layout.setSpacing(16)
+        self.btn_record = self._mkButton("Start Recording", 150)
+        self.btn_record.clicked.connect(self._toggleRecording)
+        rec_row_2_layout.addWidget(self.btn_record, 0, Qt.AlignVCenter)
+        self.record_status = self._mkLabel("Idle")
+        self.record_status.setFixedWidth(90)
+        rec_row_2_layout.addWidget(self.record_status, 0, Qt.AlignVCenter)
+        self.selected_target_status = self._mkLabel("Target: none (click one crop below)")
+        self.selected_target_status.setFixedWidth(360)
+        rec_row_2_layout.addWidget(self.selected_target_status, 0, Qt.AlignVCenter)
+        rec_row_2_layout.addStretch(1)
+        rec_panel_layout.addWidget(rec_row_2)
+        vbox.addWidget(rec_panel)
+        self._onRecordModeChanged()
+
+        rec_labels_hint = self._mkLabel("Record Classes (checked only, empty = all)")
+        vbox.addWidget(rec_labels_hint)
+        self.rec_labels_host = QWidget(wrapper)
+        self.rec_labels_layout = QGridLayout(self.rec_labels_host)
+        self.rec_labels_layout.setContentsMargins(0, 0, 0, 0)
+        self.rec_labels_layout.setHorizontalSpacing(10)
+        self.rec_labels_layout.setVerticalSpacing(6)
+        rec_labels_scroll = QScrollArea(wrapper)
+        rec_labels_scroll.setWidget(self.rec_labels_host)
+        rec_labels_scroll.setWidgetResizable(True)
+        rec_labels_scroll.setFixedHeight(72)
+        rec_labels_scroll.setStyleSheet(SCROLLBAR_STYLE)
+        vbox.addWidget(rec_labels_scroll)
 
         crops_container = QWidget(wrapper)
-        crops_container.setFixedWidth(720)
+        crops_container.setFixedWidth(self._preview_max_width)
         crops_vbox = QVBoxLayout(crops_container)
         crops_vbox.setContentsMargins(0, 0, 0, 0)
         crops_vbox.setSpacing(6)
@@ -473,7 +573,6 @@ class PhoneCameraPage(SiPage):
         crops_vbox.addWidget(crops_scroll)
         vbox.addWidget(crops_container)
 
-        wrapper.setFixedHeight(620)
         card.body().addWidget(wrapper)
         card.adjustSize()
         self.titled_group.addWidget(card)
@@ -583,15 +682,18 @@ class PhoneCameraPage(SiPage):
     def _scanCameras(self):
         serial = self.device_combo.currentText().strip() or None
         cams = scrcpy_list_cameras(find_exe("scrcpy"), serial)
-        self.cam_combo.clear()
         self._camera_ids = []
+        self._camera_labels = []
+        self.cam_combo.clear()
         if not cams:
             self.cam_combo.addItem("(no cameras)")
             self._onLog("No cameras found. Connect a device first.", "WARN")
             return
         for cid, desc in cams:
-            self.cam_combo.addItem(f"{cid}  {desc}" if desc else cid)
             self._camera_ids.append(cid)
+            self._camera_labels.append(f"{cid}  {desc}" if desc else cid)
+        for label, cid in zip(self._camera_labels, self._camera_ids):
+            self.cam_combo.addItem(label)
         self.cam_combo.setCurrentIndex(0)
         self._onLog(f"Found {len(cams)} camera(s).", "SUCCESS")
 
@@ -652,76 +754,493 @@ class PhoneCameraPage(SiPage):
         self._worker.set_class_filter([cid for checkbox, cid in self._class_checkboxes if checkbox.isChecked()])
 
     def _startStream(self):
+        if self._worker.is_running():
+            self._onLog("Restarting stream to apply camera changes...", "INFO")
+            self._setStreamState("stopping")
+            self._worker.stop(timeout=6)
         serial = self.device_combo.currentText().strip() or self.edit_conn_host.text().strip() or None
         idx = self.cam_combo.currentIndex()
         cam_id = self._camera_ids[idx] if 0 <= idx < len(self._camera_ids) else "0"
+        size_idx = self.size_combo.menu().index()
+        if size_idx is None or size_idx < 0 or size_idx >= len(self._resolution_options):
+            camera_size = self._resolution_options[1]
+        else:
+            camera_size = self._resolution_options[size_idx]
         self._worker.configure(
             serial=serial,
             camera_id=cam_id,
-            camera_size=self.size_combo.currentText(),
+            camera_size=camera_size,
             camera_fps=int(self.cam_fps.value()),
             conf=float(self.conf_spin.value()),
         )
         self._setStreamState("starting")
-        self._worker.start()
+        if not self._worker.start():
+            self._onLog("Camera stream is still shutting down. Please try again.", "WARN")
+            self._setStreamState("stopped")
 
     def _stopStream(self):
         self._setStreamState("stopping")
-        self._worker.stop()
+        self._worker.stop(timeout=6)
 
     def _onStatus(self, status: str):
         self._setStreamState(status)
+        if (status or "").lower() in ("stopped", "error"):
+            self._stable_crops.clear()
+            self._selected_target = None
+            self._last_display_crops = []
+            self.selected_target_status.setText("Target: none (click one crop below)")
+            self.preview_label.clear()
+            self.preview_label.setText("No signal")
+            if self._crop_slots:
+                for holder, _, _ in self._crop_slots:
+                    holder.hide()
 
     def _onLog(self, msg: str, level: str):
         self.adb_status.setText(f"[{level}] {msg}")
 
+    def _setRecordingState(self, recording: bool):
+        self._recording = bool(recording)
+        self.btn_record.setText("Stop Recording" if self._recording else "Start Recording")
+        self.record_status.setText("Recording" if self._recording else "Idle")
+        self.record_status.setTextColor("#FF6767" if self._recording else self.getColor(SiColor.TEXT_D))
+
+    def _onRecordModeChanged(self):
+        # "Selected Target Only" means target crop recording, not full preview.
+        if self.rec_selected_only_cb.isChecked():
+            if self.rec_preview_cb.isChecked():
+                self.rec_preview_cb.setChecked(False)
+            if not self.rec_crops_cb.isChecked():
+                self.rec_crops_cb.setChecked(True)
+            self.rec_preview_cb.setEnabled(False)
+        else:
+            self.rec_preview_cb.setEnabled(True)
+
+    def _openVideoWriter(self, path: str, width: int, height: int, fps: int):
+        fourcc = cv2.VideoWriter_fourcc(*"mp4v")
+        writer = cv2.VideoWriter(path, fourcc, float(max(5, fps)), (int(width), int(height)))
+        if writer is None or not writer.isOpened():
+            return None
+        return writer
+
+    def _toggleRecording(self):
+        if self._recording:
+            self._stopRecording()
+        else:
+            self._startRecording()
+
+    def _startRecording(self):
+        self._onRecordModeChanged()
+        if not self.rec_preview_cb.isChecked() and not self.rec_crops_cb.isChecked():
+            self._onLog("Please select at least one recording target.", "WARN")
+            return
+        if self.rec_selected_only_cb.isChecked() and self._selected_target is None:
+            self._onLog("Selected Target Only is ON, please click a target crop first.", "WARN")
+            return
+        rec_dir = os.path.join(os.path.dirname(self._models_root), "runs", "recordings")
+        os.makedirs(rec_dir, exist_ok=True)
+        stamp = time.strftime("%Y%m%d_%H%M%S")
+        self._record_preview_path = os.path.join(rec_dir, f"phone_camera_preview_{stamp}.mp4")
+        self._record_crops_path = os.path.join(rec_dir, f"phone_camera_crops_{stamp}.mp4")
+        self._record_preview_writer = None
+        self._record_crops_writer = None
+        self._record_crops_size = None
+        self._record_crops_mode = None
+        self._setRecordingState(True)
+        self._onLog("Recording started.", "SUCCESS")
+
+    def _stopRecording(self):
+        if self._record_preview_writer is not None:
+            self._record_preview_writer.release()
+            self._record_preview_writer = None
+        if self._record_crops_writer is not None:
+            self._record_crops_writer.release()
+            self._record_crops_writer = None
+        self._record_crops_size = None
+        self._record_crops_mode = None
+        was_recording = self._recording
+        self._setRecordingState(False)
+        if was_recording:
+            saved = []
+            if self.rec_preview_cb.isChecked():
+                saved.append(self._record_preview_path)
+            if self.rec_crops_cb.isChecked():
+                saved.append(self._record_crops_path)
+            self._onLog(f"Recording stopped. Saved: {', '.join(saved)}", "INFO")
+
+    def _recordPreviewFrame(self, frame: np.ndarray):
+        if not self._recording or not self.rec_preview_cb.isChecked() or frame is None or frame.size == 0:
+            return
+        h, w = frame.shape[:2]
+        if self._record_preview_writer is None:
+            writer = self._openVideoWriter(self._record_preview_path, w, h, int(self.cam_fps.value()))
+            if writer is None:
+                self._onLog("Failed to open preview recorder.", "ERROR")
+                return
+            self._record_preview_writer = writer
+        self._record_preview_writer.write(frame)
+
+    def _buildCropsCanvas(self, crops: list[tuple[str, np.ndarray]]) -> np.ndarray:
+        tile = 110
+        gap = 6
+        n = max(1, min(20, len(crops)))
+        cols = min(5, n)
+        rows = int(math.ceil(n / cols))
+        width = cols * tile + (cols + 1) * gap
+        height = rows * tile + (rows + 1) * gap
+        canvas = np.full((height, width, 3), (45, 41, 52), dtype=np.uint8)
+        for i, (_, crop) in enumerate(crops[:20]):
+            if crop is None or crop.size == 0:
+                continue
+            ch, cw = crop.shape[:2]
+            scale = min(tile / float(cw), tile / float(ch))
+            rw = max(1, int(cw * scale))
+            rh = max(1, int(ch * scale))
+            resized = cv2.resize(crop, (rw, rh), interpolation=cv2.INTER_AREA)
+            row = i // cols
+            col = i % cols
+            x = gap + col * (tile + gap) + (tile - rw) // 2
+            y = gap + row * (tile + gap) + (tile - rh) // 2
+            canvas[y:y + rh, x:x + rw] = resized
+        return canvas
+
+    def _fitFrameToSize(self, frame: np.ndarray, target_w: int, target_h: int) -> np.ndarray:
+        if frame is None or frame.size == 0:
+            return np.zeros((max(2, target_h), max(2, target_w), 3), dtype=np.uint8)
+        fh, fw = frame.shape[:2]
+        scale = min(target_w / float(fw), target_h / float(fh))
+        rw = max(1, int(fw * scale))
+        rh = max(1, int(fh * scale))
+        resized = cv2.resize(frame, (rw, rh), interpolation=cv2.INTER_AREA)
+        canvas = np.zeros((target_h, target_w, 3), dtype=np.uint8)
+        x = (target_w - rw) // 2
+        y = (target_h - rh) // 2
+        canvas[y:y + rh, x:x + rw] = resized
+        return canvas
+
+    def _recordCropsFrame(self, crops: list[tuple[str, np.ndarray]]):
+        if not self._recording or not self.rec_crops_cb.isChecked():
+            return
+        mode = "selected" if self.rec_selected_only_cb.isChecked() else "canvas"
+        if self._record_crops_mode != mode and self._record_crops_writer is not None:
+            self._record_crops_writer.release()
+            self._record_crops_writer = None
+            self._record_crops_size = None
+        self._record_crops_mode = mode
+
+        if mode == "selected":
+            if not crops:
+                return
+            frame = crops[0][1]
+            if frame is None or frame.size == 0:
+                return
+            h, w = frame.shape[:2]
+            if self._record_crops_size is None:
+                self._record_crops_size = (w, h)
+            tw, th = self._record_crops_size
+            out = self._fitFrameToSize(frame, tw, th)
+        else:
+            out = self._buildCropsCanvas(crops)
+            h, w = out.shape[:2]
+            self._record_crops_size = (w, h)
+
+        h, w = out.shape[:2]
+        if self._record_crops_writer is None:
+            writer = self._openVideoWriter(self._record_crops_path, w, h, int(self.cam_fps.value()))
+            if writer is None:
+                self._onLog("Failed to open crops recorder.", "ERROR")
+                return
+            self._record_crops_writer = writer
+        self._record_crops_writer.write(out)
+
+    def _updateRecordLabelOptions(self, crops: list[tuple[str, np.ndarray]]):
+        for name, _ in crops:
+            label = str(name)
+            if label in self._record_label_boxes:
+                continue
+            cb = QCheckBox(label, self.rec_labels_host)
+            cb.setStyleSheet(CHECKBOX_STYLE)
+            idx = len(self._record_label_boxes)
+            self.rec_labels_layout.addWidget(cb, idx // 4, idx % 4, Qt.AlignLeft)
+            self._record_label_boxes[label] = cb
+
+    def _filterCropsForRecording(self, crops: list[tuple[str, np.ndarray]]) -> list[tuple[str, np.ndarray]]:
+        selected = {name for name, cb in self._record_label_boxes.items() if cb.isChecked()}
+        if not selected:
+            return crops
+        return [(name, crop) for name, crop in crops if str(name) in selected]
+
+    def _normalizeCropItems(self, crops: list) -> list[dict]:
+        items: list[dict] = []
+        for item in (crops or []):
+            if not isinstance(item, (list, tuple)) or len(item) < 2:
+                continue
+            name = str(item[0])
+            crop = item[1]
+            if crop is None or getattr(crop, "size", 0) == 0:
+                continue
+            bbox = None
+            if len(item) >= 3 and isinstance(item[2], (list, tuple)) and len(item[2]) == 4:
+                try:
+                    bbox = tuple(int(v) for v in item[2])
+                except Exception:
+                    bbox = None
+            items.append({"name": name, "crop": crop, "bbox": bbox})
+        return items[:20]
+
+    def _bboxIoU(self, box_a, box_b) -> float:
+        if not box_a or not box_b:
+            return 0.0
+        ax1, ay1, ax2, ay2 = box_a
+        bx1, by1, bx2, by2 = box_b
+        inter_x1 = max(ax1, bx1)
+        inter_y1 = max(ay1, by1)
+        inter_x2 = min(ax2, bx2)
+        inter_y2 = min(ay2, by2)
+        iw = max(0, inter_x2 - inter_x1)
+        ih = max(0, inter_y2 - inter_y1)
+        inter = iw * ih
+        if inter <= 0:
+            return 0.0
+        area_a = max(1, (ax2 - ax1) * (ay2 - ay1))
+        area_b = max(1, (bx2 - bx1) * (by2 - by1))
+        return inter / float(area_a + area_b - inter)
+
+    def _cropSignature(self, crop: np.ndarray):
+        if crop is None or getattr(crop, "size", 0) == 0:
+            return None
+        small = cv2.resize(crop, (32, 32), interpolation=cv2.INTER_AREA)
+        hsv = cv2.cvtColor(small, cv2.COLOR_BGR2HSV)
+        hist = cv2.calcHist([hsv], [0, 1], None, [12, 8], [0, 180, 0, 256])
+        hist = cv2.normalize(hist, None).flatten()
+        return hist
+
+    def _signatureSimilarity(self, sig_a, sig_b) -> float:
+        if sig_a is None or sig_b is None:
+            return 0.0
+        try:
+            return float(cv2.compareHist(sig_a.astype(np.float32), sig_b.astype(np.float32), cv2.HISTCMP_CORREL))
+        except Exception:
+            return 0.0
+
+    def _onCropSlotClicked(self, slot_index: int):
+        if slot_index < 0 or slot_index >= len(self._last_display_crops):
+            return
+        item = self._last_display_crops[slot_index]
+        crop = item["crop"]
+        self._selected_target = {
+            "name": item["name"],
+            "bbox": item.get("bbox"),
+            "last_seen_ms": int(time.monotonic() * 1000),
+            "crop": crop,
+            "sig": self._cropSignature(crop),
+        }
+        self.rec_selected_only_cb.setChecked(True)
+        self.selected_target_status.setText(f"Target: {item['name']} (slot {slot_index + 1})")
+        self._onLog(f"Selected target: {item['name']} (slot {slot_index + 1})", "INFO")
+
+    def _stabilizeCrops(self, crops: list[dict]) -> list[dict]:
+        now_ms = int(time.monotonic() * 1000)
+        incoming = (crops or [])[:20]
+
+        used = set()
+        for inc in incoming:
+            name = str(inc.get("name", ""))
+            crop = inc.get("crop")
+            bbox = inc.get("bbox")
+            if crop is None or getattr(crop, "size", 0) == 0:
+                continue
+            best_idx = -1
+            best_iou = 0.0
+            for i, st in enumerate(self._stable_crops):
+                if i in used:
+                    continue
+                if st.get("name") != name:
+                    continue
+                iou = self._bboxIoU(st.get("bbox"), bbox)
+                if iou > best_iou:
+                    best_iou = iou
+                    best_idx = i
+            if best_idx >= 0 and best_iou >= 0.15:
+                self._stable_crops[best_idx].update({
+                    "name": name,
+                    "crop": crop.copy(),
+                    "bbox": bbox,
+                    "last_seen_ms": now_ms,
+                })
+                used.add(best_idx)
+            else:
+                self._stable_crops.append({
+                    "name": name,
+                    "crop": crop.copy(),
+                    "bbox": bbox,
+                    "last_seen_ms": now_ms,
+                })
+
+        alive: list[dict] = []
+        for st in self._stable_crops:
+            if now_ms - int(st.get("last_seen_ms", 0)) <= self._crops_hold_ms:
+                alive.append(st)
+        self._stable_crops = alive[:40]
+        return self._stable_crops[:20]
+
+    def _rotatePreview(self, delta_deg: int):
+        self._preview_rotation = (self._preview_rotation + int(delta_deg)) % 360
+        self._onLog(f"Preview rotation set to {self._preview_rotation} deg.", "INFO")
+
+    def _fitPreviewFrame(self, frame_w: int, frame_h: int):
+        if frame_w <= 0 or frame_h <= 0:
+            return
+        scale = min(self._preview_max_width / float(frame_w), self._preview_max_height / float(frame_h))
+        target_w = max(1, int(frame_w * scale))
+        target_h = max(1, int(frame_h * scale))
+        if self.preview_frame.width() != target_w or self.preview_frame.height() != target_h:
+            self.preview_frame.setFixedSize(target_w, target_h)
+            self.preview_label.setFixedSize(max(1, target_w - 2), max(1, target_h - 2))
+
+    def _applyPreviewRotation(self, frame: np.ndarray) -> np.ndarray:
+        rot = int(self._preview_rotation) % 360
+        if rot == 90:
+            return cv2.rotate(frame, cv2.ROTATE_90_CLOCKWISE)
+        if rot == 180:
+            return cv2.rotate(frame, cv2.ROTATE_180)
+        if rot == 270:
+            return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
+        return frame
+
     def _onFrame(self, frame: np.ndarray):
         if frame is None or frame.size == 0:
             return
-        h, w = frame.shape[:2]
+        now_ms = int(time.monotonic() * 1000)
+        if now_ms - self._last_preview_ms < 33:
+            return
+        self._last_preview_ms = now_ms
+        frame = self._applyPreviewRotation(frame)
+        self._recordPreviewFrame(frame)
+        fh, fw = frame.shape[:2]
+        self._fitPreviewFrame(fw, fh)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
+        h, w = rgb.shape[:2]
         img = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888)
-        pix = QPixmap.fromImage(img).scaled(self.preview_label.width(), self.preview_label.height(), Qt.KeepAspectRatio, Qt.SmoothTransformation)
+        pix = QPixmap.fromImage(img.copy()).scaled(
+            self.preview_label.width(),
+            self.preview_label.height(),
+            Qt.KeepAspectRatio,
+            Qt.SmoothTransformation,
+        )
         self.preview_label.setPixmap(pix)
 
-    def _onCrops(self, crops: list):
-        for i in reversed(range(self.crops_host_layout.count())):
-            item = self.crops_host_layout.takeAt(i)
-            widget = item.widget()
-            if widget:
-                widget.deleteLater()
+    def _ensureCropSlots(self, n: int):
+        bg = SiGlobal.siui.colors['INTERFACE_BG_A']
+        while len(self._crop_slots) < n:
+            idx = len(self._crop_slots)
+            holder = QWidget(self.crops_host)
+            vbox = QVBoxLayout(holder)
+            vbox.setContentsMargins(0, 0, 0, 0)
+            vbox.setSpacing(2)
+            img_lbl = SiLabel(holder)
+            img_lbl.setFixedSize(110, 110)
+            img_lbl.setAlignment(Qt.AlignCenter)
+            img_lbl.setStyleSheet(f"background-color: {bg}; border-radius: 4px;")
+            img_lbl.setCursor(Qt.PointingHandCursor)
+            vbox.addWidget(img_lbl)
+            text_lbl = SiLabel(holder)
+            text_lbl.setFixedWidth(110)
+            text_lbl.setAlignment(Qt.AlignCenter)
+            text_lbl.setFont(SiFont.getFont(size=11))
+            text_lbl.setTextColor(self.getColor(SiColor.TEXT_D))
+            vbox.addWidget(text_lbl)
+            self.crops_host_layout.addWidget(holder, idx // 5, idx % 5, Qt.AlignLeft)
+            holder.mousePressEvent = (lambda _event, slot=idx: self._onCropSlotClicked(slot))
+            img_lbl.mousePressEvent = (lambda _event, slot=idx: self._onCropSlotClicked(slot))
+            text_lbl.mousePressEvent = (lambda _event, slot=idx: self._onCropSlotClicked(slot))
+            self._crop_slots.append((holder, img_lbl, text_lbl))
 
-        for i, (cname, crop) in enumerate(crops):
-            try:
-                if crop is None or crop.size == 0:
+    def _onCrops(self, crops: list):
+        normalized = self._normalizeCropItems(crops)
+        stable_items = self._stabilizeCrops(normalized)
+
+        rotated_items: list[dict] = []
+        for item in stable_items:
+            crop = item["crop"]
+            if crop is None or crop.size == 0:
+                continue
+            rotated_items.append({
+                "name": item["name"],
+                "crop": self._applyPreviewRotation(crop),
+                "bbox": item.get("bbox"),
+            })
+
+        self._last_display_crops = rotated_items[:]
+        self._updateRecordLabelOptions([(x["name"], x["crop"]) for x in rotated_items])
+
+        selected_slot = -1
+        selected_record: list[tuple[str, np.ndarray]] = []
+        now_ms = int(time.monotonic() * 1000)
+        if self._selected_target is not None:
+            best_idx = -1
+            best_score = -1.0
+            best_bbox = self._selected_target.get("bbox")
+            best_name = self._selected_target.get("name")
+            best_sig = self._selected_target.get("sig")
+            for idx, item in enumerate(rotated_items):
+                if best_name and item["name"] != best_name:
                     continue
+                iou = self._bboxIoU(best_bbox, item.get("bbox"))
+                sim = self._signatureSimilarity(best_sig, self._cropSignature(item["crop"]))
+                score = 0.65 * iou + 0.35 * max(0.0, sim)
+                if score > best_score:
+                    best_score = score
+                    best_idx = idx
+            if best_idx >= 0 and best_score >= 0.20:
+                matched = rotated_items[best_idx]
+                self._selected_target = {
+                    "name": matched["name"],
+                    "bbox": matched.get("bbox"),
+                    "last_seen_ms": now_ms,
+                    "crop": matched["crop"],
+                    "sig": self._cropSignature(matched["crop"]),
+                }
+                selected_slot = best_idx
+                selected_record = [(matched["name"], matched["crop"])]
+            else:
+                last_seen = int(self._selected_target.get("last_seen_ms", 0))
+                if now_ms - last_seen <= self._selected_target_hold_ms and self._selected_target.get("crop") is not None:
+                    selected_record = [(self._selected_target["name"], self._selected_target["crop"])]
+
+        record_crops = [(x["name"], x["crop"]) for x in rotated_items]
+        record_crops = self._filterCropsForRecording(record_crops)
+        if self.rec_selected_only_cb.isChecked():
+            record_crops = selected_record
+        self._recordCropsFrame(record_crops)
+
+        self._ensureCropSlots(len(rotated_items))
+        for i, (holder, img_lbl, text_lbl) in enumerate(self._crop_slots):
+            if i >= len(rotated_items):
+                holder.hide()
+                continue
+            item = rotated_items[i]
+            cname = item["name"]
+            crop = item["crop"]
+            if crop is None or crop.size == 0:
+                holder.hide()
+                continue
+            try:
                 rgb = cv2.cvtColor(crop, cv2.COLOR_BGR2RGB)
                 h, w = rgb.shape[:2]
                 qimg = QImage(rgb.data, w, h, rgb.strides[0], QImage.Format_RGB888)
-                pix = QPixmap.fromImage(qimg).scaled(110, 110, Qt.KeepAspectRatio, Qt.SmoothTransformation)
-                holder = QWidget(self.crops_host)
-                vbox = QVBoxLayout(holder)
-                vbox.setContentsMargins(0, 0, 0, 0)
-                vbox.setSpacing(2)
-                img_lbl = SiLabel(holder)
-                img_lbl.setFixedSize(110, 110)
-                img_lbl.setAlignment(Qt.AlignCenter)
-                img_lbl.setStyleSheet(f"background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']}; border-radius: 4px;")
-                img_lbl.setPixmap(pix)
-                vbox.addWidget(img_lbl)
-                text_lbl = SiLabel(holder)
-                text_lbl.setFixedWidth(110)
-                text_lbl.setAlignment(Qt.AlignCenter)
-                text_lbl.setFont(SiFont.getFont(size=11))
-                text_lbl.setTextColor(self.getColor(SiColor.TEXT_D))
+                img_lbl.setPixmap(QPixmap.fromImage(qimg.copy()))
+                if i == selected_slot:
+                    img_lbl.setStyleSheet(f"background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']}; border-radius: 4px; border: 2px solid #D087DF;")
+                else:
+                    img_lbl.setStyleSheet(f"background-color: {SiGlobal.siui.colors['INTERFACE_BG_A']}; border-radius: 4px; border: none;")
                 text_lbl.setText(str(cname))
-                vbox.addWidget(text_lbl)
-                self.crops_host_layout.addWidget(holder, i // 5, i % 5, Qt.AlignLeft)
+                holder.show()
             except Exception:
-                continue
+                holder.hide()
 
     def closeEvent(self, event):
         try:
+            self._stopRecording()
             self._worker.stop()
         except Exception:
             pass

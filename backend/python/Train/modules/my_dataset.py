@@ -243,14 +243,76 @@ def load_dataset_config(yaml_path: str):
     with open(yaml_path, 'r', encoding='utf-8') as f:
         config = yaml.safe_load(f)
 
-    # 转换相对路径为绝对路径
+    # Resolve dataset root: prefer YAML `path`, fallback to YAML directory
     data_dir = yaml_path.parent
+    path_root = config.get('path', '')
+    if path_root:
+        root = Path(path_root)
+        path_root = root if root.is_absolute() else (data_dir / root)
+    else:
+        path_root = data_dir
+
+    def _resolve_split_dirs(split_name: str, split_val: str):
+        split_key = {'val': 'valid'}.get(split_name, split_name)
+        candidates_raw = []
+        split_path = Path(split_val)
+        if split_path.is_absolute():
+            candidates_raw.append(split_path)
+        else:
+            candidates_raw.append((path_root / split_path))
+            split_val_str = str(split_val)
+            if split_val_str.startswith('../') or split_val_str.startswith('..\\'):
+                tail = split_val_str.replace('../', '', 1).replace('..\\', '', 1)
+                candidates_raw.append(path_root / tail)
+            candidates_raw.append(path_root / split_key / 'images')
+            candidates_raw.append(path_root / split_name / 'images')
+            candidates_raw.append(path_root / split_key)
+            candidates_raw.append(path_root / split_name)
+
+        split_path = None
+        for cand in candidates_raw:
+            try:
+                if cand.is_dir():
+                    split_path = cand.resolve()
+                    break
+            except Exception:
+                continue
+        if split_path is None:
+            split_path = (candidates_raw[0] if candidates_raw else (path_root / split_val)).resolve()
+
+        # Allow both ".../images" and ".../<split>/images" layouts.
+        images_dir = split_path / 'images' if (split_path / 'images').is_dir() else split_path
+
+        candidates = []
+        parts = list(images_dir.parts)
+        for i, p in enumerate(parts):
+            if p.lower() == 'images':
+                repl = parts.copy()
+                repl[i] = 'labels'
+                candidates.append(Path(*repl))
+                break
+        candidates.extend([
+            images_dir.parent / 'labels',
+            path_root / 'labels' / split_name,
+            path_root / split_name / 'labels',
+            split_path / 'labels',
+        ])
+
+        labels_dir = None
+        for cand in candidates:
+            if cand.is_dir():
+                labels_dir = cand
+                break
+        if labels_dir is None:
+            # Keep a deterministic fallback even if dir does not exist yet.
+            labels_dir = images_dir.parent / 'labels'
+        return str(images_dir), str(labels_dir)
+
     for key in ['train', 'val', 'test']:
         if key in config:
-            # images路径
-            config[f'{key}_images'] = str(data_dir / config[key])
-            # labels路径
-            config[f'{key}_labels'] = str(data_dir / config[key].replace('images', 'labels'))
+            images_dir, labels_dir = _resolve_split_dirs(key, config[key])
+            config[f'{key}_images'] = images_dir
+            config[f'{key}_labels'] = labels_dir
 
     return config
 

@@ -228,7 +228,7 @@ class CameraWorker(QObject):
 
     def __init__(self, parent=None):
         super().__init__(parent)
-        self._stop_event = threading.Event()
+        self._stop_event: threading.Event | None = None
         self._thread: threading.Thread | None = None
         self._lock = threading.Lock()
         self._detector = None
@@ -236,14 +236,14 @@ class CameraWorker(QObject):
         self._conf_threshold = 0.4
         self._serial: str | None = None
         self._camera_id = "0"
-        self._camera_size = "1280x720"
+        self._camera_size: str | None = "1280x720"
         self._camera_fps = 30
 
     def configure(self, *, serial: str | None, camera_id: str, camera_size: str, camera_fps: int, conf: float):
         with self._lock:
             self._serial = serial
             self._camera_id = str(camera_id)
-            self._camera_size = camera_size
+            self._camera_size = (camera_size or "").strip() or "1280x720"
             self._camera_fps = int(camera_fps)
             self._conf_threshold = float(conf)
 
@@ -259,18 +259,37 @@ class CameraWorker(QObject):
         with self._lock:
             self._conf_threshold = float(value)
 
-    def start(self):
-        if self._thread and self._thread.is_alive():
-            return
-        self._stop_event.clear()
-        self._thread = threading.Thread(target=self._run, daemon=True)
-        self._thread.start()
+    def is_running(self) -> bool:
+        with self._lock:
+            return self._thread is not None and self._thread.is_alive()
 
-    def stop(self):
-        self._stop_event.set()
-        if self._thread:
-            self._thread.join(timeout=4)
-            self._thread = None
+    def start(self) -> bool:
+        with self._lock:
+            if self._thread and self._thread.is_alive():
+                return False
+            self._stop_event = threading.Event()
+            thread = threading.Thread(target=self._run, args=(self._stop_event,), daemon=True)
+            self._thread = thread
+        thread.start()
+        return True
+
+    def stop(self, timeout: float = 6.0) -> bool:
+        with self._lock:
+            stop_event = self._stop_event
+            thread = self._thread
+        if stop_event is not None:
+            stop_event.set()
+        if thread is not None:
+            thread.join(timeout=timeout)
+            alive = thread.is_alive()
+            if not alive:
+                with self._lock:
+                    if self._thread is thread:
+                        self._thread = None
+                    if self._stop_event is stop_event:
+                        self._stop_event = None
+            return not alive
+        return True
 
     def _adb_base(self, adb_path: str) -> list[str]:
         cmd = [adb_path]
@@ -278,15 +297,15 @@ class CameraWorker(QObject):
             cmd.extend(["-s", self._serial])
         return cmd
 
-    def _build_server_args(self, version: str) -> list[str]:
-        return [
+    def _build_server_args(self, version: str, camera_size: str | None, camera_fps: int | None) -> list[str]:
+        args = [
             version, "log_level=info", "video=true", "audio=false",
             "video_codec=h264", "video_source=camera", "audio_source=mic",
             "audio_dup=false", "max_size=0", "video_bit_rate=8000000",
-            f"max_fps={float(self._camera_fps)}", "angle=0",
+            "angle=0",
             "tunnel_forward=true", "crop=", "control=false", "display_id=0",
             f"camera_id={self._camera_id}", "camera_facing=", "camera_ar=",
-            f"camera_fps={self._camera_fps}", "camera_high_speed=false",
+            "camera_high_speed=false",
             "show_touches=false", "stay_awake=false", "screen_off_timeout=-1",
             "video_codec_options=", "audio_codec_options=", "video_encoder=",
             "audio_encoder=", "power_off_on_close=false",
@@ -294,10 +313,17 @@ class CameraWorker(QObject):
             "cleanup=false", "power_on=true", "new_display=",
             "vd_destroy_content=true", "vd_system_decorations=true",
             "capture_orientation=@0", "display_ime_policy=hide",
-            "raw_stream=true", f"camera_size={self._camera_size}",
+            "raw_stream=true",
         ]
+        if camera_fps is not None and camera_fps > 0:
+            args.append(f"max_fps={float(camera_fps)}")
+            args.append(f"camera_fps={int(camera_fps)}")
+        # Leave camera_size unset to let scrcpy use the camera's native/default resolution.
+        if camera_size:
+            args.append(f"camera_size={camera_size}")
+        return args
 
-    def _run(self):
+    def _run(self, stop_event: threading.Event):
         adb_path = find_exe("adb")
         scrcpy_path = find_exe("scrcpy")
         server_path = find_scrcpy_server(scrcpy_path)
@@ -317,7 +343,13 @@ class CameraWorker(QObject):
         cap = None
         reader_thread = None
         try:
-            self.log.emit(f"Starting camera (id={self._camera_id}, size={self._camera_size})", "INFO")
+            requested_size = self._camera_size
+            requested_fps = int(self._camera_fps)
+            size_text = requested_size or "1280x720"
+            self.log.emit(
+                f"Starting camera (id={self._camera_id}, size={size_text}, fps={requested_fps})",
+                "INFO",
+            )
             subprocess.run(self._adb_base(adb_path) + ["push", str(server_path), DEVICE_SERVER_PATH],
                            capture_output=True, text=True, timeout=30, creationflags=_creation_flags())
             subprocess.run(self._adb_base(adb_path) + ["forward", "--remove", f"tcp:{LOCAL_PORT}"],
@@ -325,17 +357,29 @@ class CameraWorker(QObject):
             subprocess.run(self._adb_base(adb_path) + ["forward", f"tcp:{LOCAL_PORT}", "localabstract:scrcpy"],
                            capture_output=True, text=True, timeout=10, check=True, creationflags=_creation_flags())
 
-            shell_cmd = ["shell", f"CLASSPATH={DEVICE_SERVER_PATH}", "app_process", "/", "com.genymobile.scrcpy.Server",
-                         *self._build_server_args(version)]
-            server_proc = subprocess.Popen(self._adb_base(adb_path) + shell_cmd,
-                                           stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
-                                           creationflags=_creation_flags())
+            shell_cmd = [
+                "shell", f"CLASSPATH={DEVICE_SERVER_PATH}", "app_process", "/", "com.genymobile.scrcpy.Server",
+                *self._build_server_args(version, requested_size, requested_fps),
+            ]
+            server_proc = subprocess.Popen(
+                self._adb_base(adb_path) + shell_cmd,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                creationflags=_creation_flags(),
+            )
             time.sleep(1.0)
 
             os.environ["OPENCV_FFMPEG_CAPTURE_OPTIONS"] = "hwaccel;d3d11va|video_codec;h264"
-            deadline = time.time() + 8.0
+            deadline = time.time() + 6.0
             cap = cv2.VideoCapture(f"tcp://127.0.0.1:{LOCAL_PORT}", cv2.CAP_FFMPEG)
-            while not cap.isOpened() and time.time() < deadline:
+            while not cap.isOpened() and time.time() < deadline and not stop_event.is_set():
+                if server_proc.poll() is not None:
+                    err = ""
+                    try:
+                        err = (server_proc.stderr.read() or b"").decode(errors="ignore").strip()
+                    except Exception:
+                        pass
+                    raise RuntimeError(f"scrcpy-server exited: {err or 'no output'}")
                 time.sleep(0.2)
                 cap = cv2.VideoCapture(f"tcp://127.0.0.1:{LOCAL_PORT}", cv2.CAP_FFMPEG)
             if not cap.isOpened():
@@ -350,7 +394,7 @@ class CameraWorker(QObject):
 
             def _read_latest_frame():
                 nonlocal latest_frame, latest_id
-                while not self._stop_event.is_set():
+                while not stop_event.is_set():
                     ok, frame = cap.read()
                     if ok and frame is not None:
                         with latest_lock:
@@ -362,7 +406,7 @@ class CameraWorker(QObject):
             reader_thread = threading.Thread(target=_read_latest_frame, daemon=True)
             reader_thread.start()
             processed_id = -1
-            while not self._stop_event.is_set():
+            while not stop_event.is_set():
                 if server_proc.poll() is not None:
                     raise RuntimeError("scrcpy-server exited")
                 with latest_lock:
@@ -377,7 +421,7 @@ class CameraWorker(QObject):
             self.log.emit(f"Camera stream error: {exc}", "ERROR")
             self.status_changed.emit("error")
         finally:
-            self._stop_event.set()
+            stop_event.set()
             if reader_thread is not None and reader_thread.is_alive():
                 reader_thread.join(timeout=1)
             if cap is not None:
@@ -398,10 +442,23 @@ class CameraWorker(QObject):
                 pass
             self.status_changed.emit("stopped")
             self.log.emit("Camera stream stopped", "INFO")
+            with self._lock:
+                current = threading.current_thread()
+                if self._thread is current:
+                    self._thread = None
+                if self._stop_event is stop_event:
+                    self._stop_event = None
 
     def _process_frame(self, frame: np.ndarray):
-        annotated = frame.copy()
-        crops: list[tuple[str, np.ndarray]] = []
+        crops: list[tuple[str, np.ndarray, tuple[int, int, int, int]]] = []
+        preview_max = 960
+        fh, fw = frame.shape[:2]
+        preview_scale = min(1.0, preview_max / max(fh, fw))
+        if preview_scale < 1.0:
+            ph, pw = max(1, int(fh * preview_scale)), max(1, int(fw * preview_scale))
+            annotated = cv2.resize(frame, (pw, ph), interpolation=cv2.INTER_AREA)
+        else:
+            annotated = frame.copy()
         with self._lock:
             detector = self._detector
             class_filter = set(self._class_filter)
@@ -409,7 +466,7 @@ class CameraWorker(QObject):
 
         if detector is not None and getattr(detector, "model", None) is not None:
             try:
-                results = detector.model(frame, conf=conf, verbose=False)
+                results = detector.model(frame, conf=conf, imgsz=640, verbose=False)
                 names = getattr(detector.model, "names", {})
                 h, w = frame.shape[:2]
                 for result in results:
@@ -422,9 +479,20 @@ class CameraWorker(QObject):
                         x1, y1, x2, y2 = [int(v) for v in box.xyxy[0].tolist()]
                         x1, y1 = max(0, x1), max(0, y1)
                         x2, y2 = min(w, x2), min(h, y2)
+                        if x2 <= x1 or y2 <= y1:
+                            continue
                         label = str(names.get(cls_id, cls_id)) if isinstance(names, dict) else str(cls_id)
-                        cv2.rectangle(annotated, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                        crops.append((label, frame[y1:y2, x1:x2].copy()))
+                        px1 = int(x1 * preview_scale); py1 = int(y1 * preview_scale)
+                        px2 = int(x2 * preview_scale); py2 = int(y2 * preview_scale)
+                        cv2.rectangle(annotated, (px1, py1), (px2, py2), (0, 255, 0), 2)
+                        crop = frame[y1:y2, x1:x2]
+                        ch, cw = crop.shape[:2]
+                        scale = 110.0 / max(ch, cw)
+                        if scale < 1.0:
+                            crop = cv2.resize(crop, (max(1, int(cw * scale)), max(1, int(ch * scale))), interpolation=cv2.INTER_AREA)
+                        else:
+                            crop = crop.copy()
+                        crops.append((label, crop, (x1, y1, x2, y2)))
             except Exception as exc:
                 self.log.emit(f"Inference error: {exc}", "ERROR")
 

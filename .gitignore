@@ -11,7 +11,9 @@ yolo11x.pt
 yolo11m.pt
 yolo26x.pt
 yolo26m.pt
+yolo26n.pt
 app/models/user/
 *.onnx
 app/data/configs/*
 !app/data/configs/Default.json
+app/runs/recordings

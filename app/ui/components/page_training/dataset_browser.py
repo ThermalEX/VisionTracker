@@ -289,10 +289,8 @@ class DatasetBrowser(QWidget):
             split_val = data.get(split_name, "")
             if not split_val:
                 continue
-            img_dir = split_val if os.path.isabs(split_val) else os.path.join(path_root, split_val)
+            img_dir, label_dir = self._resolveSplitDirs(path_root, split_name, split_val)
             if os.path.isdir(img_dir):
-                # Infer label dir from image dir (images/ -> labels/)
-                label_dir = img_dir.replace("images", "labels")
                 self._splits[split_name] = {
                     "images_dir": img_dir,
                     "labels_dir": label_dir if os.path.isdir(label_dir) else "",
@@ -304,6 +302,56 @@ class DatasetBrowser(QWidget):
             self.split_combo.menu().indexChanged.connect(self._onSplitChanged)
             first_split = list(self._splits.keys())[0]
             self._loadSplit(first_split)
+
+    def _resolveSplitDirs(self, path_root: str, split_name: str, split_val: str):
+        split_key = {"val": "valid"}.get(split_name, split_name)
+        candidates_raw = []
+        if os.path.isabs(split_val):
+            candidates_raw.append(split_val)
+        else:
+            candidates_raw.append(os.path.join(path_root, split_val))
+            if split_val.startswith("..\\") or split_val.startswith("../"):
+                tail = split_val.replace("..\\", "", 1).replace("../", "", 1)
+                candidates_raw.append(os.path.join(path_root, tail))
+            candidates_raw.append(os.path.join(path_root, split_key, "images"))
+            candidates_raw.append(os.path.join(path_root, split_name, "images"))
+            candidates_raw.append(os.path.join(path_root, split_key))
+            candidates_raw.append(os.path.join(path_root, split_name))
+
+        raw = ""
+        for cand in candidates_raw:
+            cand = os.path.normpath(cand)
+            if os.path.isdir(cand):
+                raw = cand
+                break
+        if not raw:
+            raw = os.path.normpath(candidates_raw[0] if candidates_raw else os.path.join(path_root, split_val))
+        if os.path.isdir(os.path.join(raw, "images")):
+            img_dir = os.path.join(raw, "images")
+        else:
+            img_dir = raw
+
+        # Candidates for labels dir (ordered by likelihood)
+        candidates = []
+        parts = list(os.path.normpath(img_dir).split(os.sep))
+        for i, part in enumerate(parts):
+            if part.lower() == "images":
+                repl = parts.copy()
+                repl[i] = "labels"
+                candidates.append(os.path.join(*repl))
+                break
+        candidates.extend([
+            os.path.join(os.path.dirname(img_dir), "labels"),
+            os.path.join(path_root, "labels", split_name),
+            os.path.join(path_root, split_name, "labels"),
+            os.path.join(raw, "labels"),
+        ])
+        label_dir = ""
+        for cand in candidates:
+            if os.path.isdir(cand):
+                label_dir = os.path.normpath(cand)
+                break
+        return os.path.normpath(img_dir), label_dir
 
     def getDatasetInfo(self):
         """Return dataset overview info."""
