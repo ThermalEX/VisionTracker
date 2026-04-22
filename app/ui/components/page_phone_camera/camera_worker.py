@@ -223,6 +223,8 @@ def scrcpy_list_cameras(scrcpy_path: str, serial: str | None = None) -> list[tup
 class CameraWorker(QObject):
     frame_ready = pyqtSignal(object)
     crops_ready = pyqtSignal(list)
+    frame_raw_ready = pyqtSignal(object)
+    crops_raw_ready = pyqtSignal(list)
     log = pyqtSignal(str, str)
     status_changed = pyqtSignal(str)
 
@@ -451,6 +453,7 @@ class CameraWorker(QObject):
 
     def _process_frame(self, frame: np.ndarray):
         crops: list[tuple[str, np.ndarray, tuple[int, int, int, int]]] = []
+        raw_crops: list[tuple[str, np.ndarray]] = []
         preview_max = 960
         fh, fw = frame.shape[:2]
         preview_scale = min(1.0, preview_max / max(fh, fw))
@@ -485,16 +488,19 @@ class CameraWorker(QObject):
                         px1 = int(x1 * preview_scale); py1 = int(y1 * preview_scale)
                         px2 = int(x2 * preview_scale); py2 = int(y2 * preview_scale)
                         cv2.rectangle(annotated, (px1, py1), (px2, py2), (0, 255, 0), 2)
-                        crop = frame[y1:y2, x1:x2]
-                        ch, cw = crop.shape[:2]
+                        raw_crop = frame[y1:y2, x1:x2].copy()
+                        raw_crops.append((label, raw_crop))
+                        ch, cw = raw_crop.shape[:2]
                         scale = 110.0 / max(ch, cw)
                         if scale < 1.0:
-                            crop = cv2.resize(crop, (max(1, int(cw * scale)), max(1, int(ch * scale))), interpolation=cv2.INTER_AREA)
+                            crop = cv2.resize(raw_crop, (max(1, int(cw * scale)), max(1, int(ch * scale))), interpolation=cv2.INTER_AREA)
                         else:
-                            crop = crop.copy()
+                            crop = raw_crop.copy()
                         crops.append((label, crop, (x1, y1, x2, y2)))
             except Exception as exc:
                 self.log.emit(f"Inference error: {exc}", "ERROR")
 
         self.frame_ready.emit(annotated)
         self.crops_ready.emit(crops[:20])
+        self.frame_raw_ready.emit(frame)
+        self.crops_raw_ready.emit(raw_crops[:20])

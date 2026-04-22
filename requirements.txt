@@ -17,6 +17,10 @@ ultralytics>=8.3.0
 torch>=2.0.0
 torchvision>=0.15.0
 
+# Optional: TensorRT acceleration for .engine models (NVIDIA GPU only, ~2 GB)
+#   pip install tensorrt
+# If omitted, the app falls back to .pt models via PyTorch.
+
 # Computer Vision
 opencv-python>=4.8.0
 numpy>=1.24.0
@@ -32,5 +36,6 @@ pywin32>=306  # Windows only
 
 # Utilities
 pillow>=10.0.0
+PyYAML>=6.0.1
 markdown>=3.7
 pygments>=2.18.0

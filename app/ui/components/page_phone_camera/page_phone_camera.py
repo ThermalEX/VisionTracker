@@ -152,6 +152,8 @@ class PhoneCameraPage(SiPage):
         self._worker = CameraWorker(self)
         self._worker.frame_ready.connect(self._onFrame)
         self._worker.crops_ready.connect(self._onCrops)
+        self._worker.frame_raw_ready.connect(self._onFrameRaw)
+        self._worker.crops_raw_ready.connect(self._onCropsRaw)
         self._worker.status_changed.connect(self._onStatus)
         self._worker.log.connect(self._onLog)
 
@@ -178,6 +180,7 @@ class PhoneCameraPage(SiPage):
         self._record_preview_path = ""
         self._record_crops_path = ""
         self._record_label_boxes: dict[str, QCheckBox] = {}
+        self._selected_record_label: str | None = None
         self._selected_target: dict | None = None
         self._selected_target_hold_ms = 600
         self._last_display_crops: list[dict] = []
@@ -363,17 +366,6 @@ class PhoneCameraPage(SiPage):
         self.cam_fps.setMaximum(60)
         self.cam_fps.setValue(30)
         tuning_row.addWidget(self.cam_fps, side="left")
-        self.conf_spin = SiSliderDoubleSpinBox(self)
-        self.conf_spin.setTitle("Confidence")
-        self.conf_spin.setHint("Minimum YOLO confidence threshold")
-        self.conf_spin.resize(180, 84)
-        self.conf_spin.setMinimum(0.05)
-        self.conf_spin.setMaximum(0.95)
-        self.conf_spin.setSingleStep(0.05)
-        self.conf_spin.setDecimals(2)
-        self.conf_spin.setValue(0.40)
-        self.conf_spin.valueChanged.connect(lambda value: self._worker.set_conf(float(value)))
-        tuning_row.addWidget(self.conf_spin, side="left")
         card.body().addWidget(tuning_row)
 
         btn_row = SiDenseHContainer(self)
@@ -425,6 +417,22 @@ class PhoneCameraPage(SiPage):
         self.btn_load_model.clicked.connect(self._loadSelectedModel)
         row.addWidget(self.btn_load_model, side="left")
         card.body().addWidget(row)
+
+        conf_row = SiDenseHContainer(self)
+        conf_row.setFixedHeight(84)
+        conf_row.setSpacing(24)
+        self.conf_spin = SiSliderDoubleSpinBox(self)
+        self.conf_spin.setTitle("Confidence")
+        self.conf_spin.setHint("Minimum YOLO confidence threshold")
+        self.conf_spin.resize(180, 84)
+        self.conf_spin.setMinimum(0.05)
+        self.conf_spin.setMaximum(0.95)
+        self.conf_spin.setSingleStep(0.05)
+        self.conf_spin.setDecimals(2)
+        self.conf_spin.setValue(0.40)
+        self.conf_spin.valueChanged.connect(lambda value: self._worker.set_conf(float(value)))
+        conf_row.addWidget(self.conf_spin, side="left")
+        card.body().addWidget(conf_row)
 
         card.body().addWidget(self._mkLabel("Classes (check to include; empty = all)"))
         self.classes_host = QWidget(self)
@@ -1107,6 +1115,27 @@ class PhoneCameraPage(SiPage):
             return cv2.rotate(frame, cv2.ROTATE_90_COUNTERCLOCKWISE)
         return frame
 
+    def _onFrameRaw(self, frame: np.ndarray):
+        if frame is None or frame.size == 0:
+            return
+        self._recordPreviewFrame(self._applyPreviewRotation(frame))
+
+    def _onCropsRaw(self, crops: list):
+        rotated: list[tuple[str, np.ndarray]] = []
+        for item in crops:
+            try:
+                name, crop = item[0], item[1]
+            except Exception:
+                continue
+            if crop is None or crop.size == 0:
+                continue
+            rotated.append((str(name), self._applyPreviewRotation(crop)))
+        record_crops = self._filterCropsForRecording(rotated)
+        if self.rec_selected_only_cb.isChecked():
+            label = self._selected_record_label
+            record_crops = [(n, c) for (n, c) in record_crops if label is not None and n == label][:1]
+        self._recordCropsFrame(record_crops)
+
     def _onFrame(self, frame: np.ndarray):
         if frame is None or frame.size == 0:
             return
@@ -1115,7 +1144,6 @@ class PhoneCameraPage(SiPage):
             return
         self._last_preview_ms = now_ms
         frame = self._applyPreviewRotation(frame)
-        self._recordPreviewFrame(frame)
         fh, fw = frame.shape[:2]
         self._fitPreviewFrame(fw, fh)
         rgb = cv2.cvtColor(frame, cv2.COLOR_BGR2RGB)
@@ -1207,11 +1235,7 @@ class PhoneCameraPage(SiPage):
                 if now_ms - last_seen <= self._selected_target_hold_ms and self._selected_target.get("crop") is not None:
                     selected_record = [(self._selected_target["name"], self._selected_target["crop"])]
 
-        record_crops = [(x["name"], x["crop"]) for x in rotated_items]
-        record_crops = self._filterCropsForRecording(record_crops)
-        if self.rec_selected_only_cb.isChecked():
-            record_crops = selected_record
-        self._recordCropsFrame(record_crops)
+        self._selected_record_label = selected_record[0][0] if selected_record else None
 
         self._ensureCropSlots(len(rotated_items))
         for i, (holder, img_lbl, text_lbl) in enumerate(self._crop_slots):

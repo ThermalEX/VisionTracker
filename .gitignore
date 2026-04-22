@@ -17,3 +17,4 @@ app/models/user/
 app/data/configs/*
 !app/data/configs/Default.json
 app/runs/recordings
+docs/

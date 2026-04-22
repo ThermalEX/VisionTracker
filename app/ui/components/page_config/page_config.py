@@ -147,6 +147,94 @@ class FlatLongPressButton(SiFlatButton):
         super().paintEvent(event)
 
 
+class CrosshairPreview(QWidget):
+    """Live preview widget that paints the crosshair using current settings."""
+
+    _COLOR_MAP = {
+        0: QColor(0, 255, 0),        # Green
+        1: QColor(255, 64, 64),      # Red
+        2: QColor(255, 230, 0),      # Yellow
+        3: QColor(0, 230, 255),      # Cyan
+        4: QColor(240, 240, 240),    # White
+        5: QColor(255, 0, 255),      # Magenta
+    }
+
+    def __init__(self, parent=None):
+        super().__init__(parent)
+        self.setMinimumHeight(160)
+        self._show = True
+        self._center_dot = True
+        self._length = 10
+        self._thickness = 2
+        self._gap = 4
+        self._dot_size = 2
+        self._color_idx = 0
+
+    def setCrosshair(self, *, show, center_dot, length, thickness, gap, dot_size, color_idx):
+        self._show = bool(show)
+        self._center_dot = bool(center_dot)
+        self._length = int(length)
+        self._thickness = int(thickness)
+        self._gap = int(gap)
+        self._dot_size = int(dot_size)
+        self._color_idx = int(color_idx) if color_idx >= 0 else 0
+        self.update()
+
+    def paintEvent(self, event):
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.Antialiasing)
+
+        rect = self.rect().adjusted(1, 1, -1, -1)
+        bg_path = QPainterPath()
+        bg_path.addRoundedRect(QRectF(rect), 6, 6)
+        painter.setPen(Qt.NoPen)
+        painter.setBrush(QColor(18, 18, 22))
+        painter.drawPath(bg_path)
+
+        painter.setClipPath(bg_path)
+
+        grid_color = QColor(255, 255, 255, 14)
+        painter.setPen(grid_color)
+        step = 20
+        for x in range(rect.left(), rect.right() + 1, step):
+            painter.drawLine(x, rect.top(), x, rect.bottom())
+        for y in range(rect.top(), rect.bottom() + 1, step):
+            painter.drawLine(rect.left(), y, rect.right(), y)
+
+        axis_color = QColor(255, 255, 255, 28)
+        painter.setPen(axis_color)
+        cx = rect.left() + rect.width() // 2
+        cy = rect.top() + rect.height() // 2
+        painter.drawLine(rect.left(), cy, rect.right(), cy)
+        painter.drawLine(cx, rect.top(), cx, rect.bottom())
+
+        if not self._show:
+            painter.setPen(QColor(150, 150, 155))
+            painter.drawText(rect, Qt.AlignCenter, "Crosshair disabled")
+            return
+
+        color = self._COLOR_MAP.get(self._color_idx, self._COLOR_MAP[0])
+        pen = painter.pen()
+        pen.setColor(color)
+        pen.setWidth(max(1, self._thickness))
+        pen.setCapStyle(Qt.FlatCap)
+        painter.setPen(pen)
+
+        gap = self._gap
+        length = self._length
+        if length > 0:
+            painter.drawLine(cx, cy - gap - length, cx, cy - gap)
+            painter.drawLine(cx, cy + gap, cx, cy + gap + length)
+            painter.drawLine(cx - gap - length, cy, cx - gap, cy)
+            painter.drawLine(cx + gap, cy, cx + gap + length, cy)
+
+        if self._center_dot and self._dot_size > 0:
+            painter.setPen(Qt.NoPen)
+            painter.setBrush(color)
+            r = self._dot_size
+            painter.drawEllipse(cx - r, cy - r, r * 2, r * 2)
+
+
 class RoundedDialog(QWidget):
     """Base class for rounded dialogs with fade animation."""
     closed = pyqtSignal()
@@ -561,6 +649,20 @@ class ConfigPage(SiPage):
         ch_container.addWidget(self.crosshair_gap, side="left")
         ch_container.addWidget(self.crosshair_dot_size, side="left")
         crosshair_card.body().addWidget(ch_container)
+
+        # Preview
+        self.crosshair_preview = CrosshairPreview(self)
+        self.crosshair_preview.setMinimumHeight(180)
+        crosshair_card.body().addWidget(self.crosshair_preview)
+
+        self.crosshair_show.toggled.connect(self._updateCrosshairPreview)
+        self.crosshair_center_dot.toggled.connect(self._updateCrosshairPreview)
+        self.crosshair_length.valueChanged.connect(self._updateCrosshairPreview)
+        self.crosshair_thickness.valueChanged.connect(self._updateCrosshairPreview)
+        self.crosshair_gap.valueChanged.connect(self._updateCrosshairPreview)
+        self.crosshair_dot_size.valueChanged.connect(self._updateCrosshairPreview)
+        self.crosshair_color.currentIndexChanged.connect(self._updateCrosshairPreview)
+
         crosshair_card.adjustSize()
         self.titled_group.addWidget(crosshair_card)
 
@@ -862,6 +964,7 @@ class ConfigPage(SiPage):
             color = config.get("crosshair_color", "green")
             color_map = {"green": 0, "red": 1, "yellow": 2, "cyan": 3, "white": 4, "magenta": 5}
             self.crosshair_color.setCurrentIndex(color_map.get(color, 0))
+            self._updateCrosshairPreview()
 
             # Fire
             self.click_interval.setValue(config.get("click_interval", 0.2))
@@ -960,6 +1063,19 @@ class ConfigPage(SiPage):
             "pid_cooldown": self.pid_cooldown.value(),
             "pid_error_threshold": self.pid_error_threshold.value(),
         }
+
+    def _updateCrosshairPreview(self, *_):
+        if not hasattr(self, "crosshair_preview"):
+            return
+        self.crosshair_preview.setCrosshair(
+            show=self.crosshair_show.isChecked(),
+            center_dot=self.crosshair_center_dot.isChecked(),
+            length=self.crosshair_length.value(),
+            thickness=self.crosshair_thickness.value(),
+            gap=self.crosshair_gap.value(),
+            dot_size=self.crosshair_dot_size.value(),
+            color_idx=self.crosshair_color.currentIndex(),
+        )
 
     def _onControllerTypeChanged(self, index: int):
         is_adrc = (index == 0)
@@ -1155,6 +1271,7 @@ class ConfigPage(SiPage):
         self.crosshair_color.setCurrentIndex(color_idx)
         self.crosshair_center_dot.setChecked(center_dot)
         self.crosshair_dot_size.setValue(max(1, min(10, dot_size)))
+        self._updateCrosshairPreview()
 
         self._showNotification("Applied", "Crosshair code applied successfully.", 1)
 

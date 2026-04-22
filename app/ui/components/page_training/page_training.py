@@ -3,7 +3,8 @@
 import json
 import os
 import re
-from PyQt5.QtCore import Qt, QPointF, QRectF, QTimer
+import sys
+from PyQt5.QtCore import Qt, QPointF, QProcess, QRectF, QTimer
 from PyQt5.QtGui import QFont, QColor
 from PyQt5.QtWidgets import QFileDialog, QGridLayout, QLineEdit, QTextEdit, QWidget
 
@@ -124,6 +125,7 @@ class TrainingPage(SiPage):
         self._createAugmentationSection()
         self._createPerformanceSection()
         self._createTrainingControlSection()
+        self._createEngineExportSection()
 
         self.titled_group.addPlaceholder(64)
         self.setAttachment(self.titled_group)
@@ -1231,6 +1233,367 @@ class TrainingPage(SiPage):
         self.status_label.setText("Training error!")
         self.progress_bar.setState("paused")
         self._showNotification("Training Error", msg, 3)
+
+    # ── Section 7: Engine Export ───────────────────────────────────
+
+    def _createEngineExportSection(self):
+        self.titled_group.addTitle("Engine Export")
+
+        export_hint = SiLabel(self)
+        export_hint.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        export_hint.setFont(SiFont.getFont(size=13))
+        export_hint.setTextColor(self.getColor(SiColor.TEXT_D))
+        export_hint.setText(
+            "Export a trained .pt model to a TensorRT .engine file for accelerated inference. "
+            "The resulting engine is GPU-specific and must be re-exported on each target machine."
+        )
+        self.titled_group.addWidget(export_hint)
+
+        # Model picker card
+        self.export_model_card = SiOptionCardLinear(self)
+        self.export_model_card.setTitle("Source Model", "Select a .pt file from app/models or app/models/user")
+        self.export_model_card.load(SiGlobal.siui.iconpack.get("ic_fluent_brain_circuit_regular"))
+
+        self.export_model_combo = SiComboBox(self)
+        self.export_model_combo.resize(280, 32)
+        self.export_model_combo.indexChanged.connect(self._onExportModelComboChanged)
+        self.export_model_card.addWidget(self.export_model_combo)
+
+        self.btn_refresh_export_models = SiFlatButton(self)
+        self.btn_refresh_export_models.setFixedSize(32, 32)
+        self.btn_refresh_export_models.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_arrow_clockwise_regular"))
+        self.btn_refresh_export_models.setToolTip("Refresh model list")
+        self.btn_refresh_export_models.clicked.connect(self._refreshExportModels)
+        self.export_model_card.addWidget(self.btn_refresh_export_models)
+
+        self.btn_browse_export_model = SiFlatButton(self)
+        self.btn_browse_export_model.setFixedSize(32, 32)
+        self.btn_browse_export_model.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_folder_open_filled"))
+        self.btn_browse_export_model.setToolTip("Browse for a .pt file on disk")
+        self.btn_browse_export_model.clicked.connect(self._onBrowseExportModel)
+        self.export_model_card.addWidget(self.btn_browse_export_model)
+
+        self.titled_group.addWidget(self.export_model_card)
+
+        # Row showing the resolved path of the currently-selected model
+        self.export_model_path_label = SiLabel(self)
+        self.export_model_path_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        self.export_model_path_label.setFont(SiFont.getFont(size=12))
+        self.export_model_path_label.setTextColor(self.getColor(SiColor.TEXT_D))
+        self.export_model_path_label.setText("")
+        self.titled_group.addWidget(self.export_model_path_label)
+
+        # Parameters card (image size + half precision)
+        export_params_card = SiTriSectionFlatCard(self)
+        export_params_card.setTitle("Export Parameters")
+
+        export_params_row = SiDenseHContainer(self)
+        export_params_row.setSpacing(24)
+        export_params_row.setFixedHeight(90)
+
+        self.export_imgsz = SiSliderSpinBox(self)
+        self.export_imgsz.setTitle("Input Size (px)")
+        self.export_imgsz.resize(220, 84)
+        self.export_imgsz.setMinimum(128)
+        self.export_imgsz.setMaximum(1280)
+        self.export_imgsz.setSingleStep(32)
+        self.export_imgsz.setValue(384)
+        export_params_row.addWidget(self.export_imgsz, side="left")
+
+        export_params_card.body().addWidget(export_params_row)
+
+        half_row = SiDenseHContainer(self)
+        half_row.setSpacing(16)
+        half_row.setFixedHeight(36)
+        half_label = SiLabel(self)
+        half_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        half_label.setFont(SiFont.getFont(size=13))
+        half_label.setTextColor(self.getColor(SiColor.TEXT_D))
+        half_label.setText("FP16 Half Precision (faster, lower memory)")
+        half_row.addWidget(half_label, side="left")
+
+        self.export_half = SiSwitch(self)
+        self.export_half.setChecked(True)
+        half_row.addWidget(self.export_half, side="right")
+        export_params_card.body().addWidget(half_row)
+
+        export_params_card.adjustSize()
+        self.titled_group.addWidget(export_params_card)
+
+        # Control row: start button + status label
+        export_btn_row = SiDenseHContainer(self)
+        export_btn_row.setFixedHeight(40)
+        export_btn_row.setSpacing(8)
+        export_btn_row.setAlignment(Qt.AlignVCenter)
+
+        self.btn_start_export = SiFlatButton(self)
+        self.btn_start_export.setFixedSize(32, 32)
+        self.btn_start_export.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_arrow_export_filled"))
+        self.btn_start_export.setToolTip("Start TensorRT engine export")
+        self.btn_start_export.clicked.connect(self._onStartExport)
+        export_btn_row.addWidget(self.btn_start_export, side="left")
+
+        self.btn_cancel_export = SiFlatButton(self)
+        self.btn_cancel_export.setFixedSize(32, 32)
+        self.btn_cancel_export.setSvgIcon(SiGlobal.siui.iconpack.get("ic_fluent_stop_filled"))
+        self.btn_cancel_export.setToolTip("Cancel export")
+        self.btn_cancel_export.setEnabled(False)
+        self.btn_cancel_export.clicked.connect(self._onCancelExport)
+        export_btn_row.addWidget(self.btn_cancel_export, side="left")
+
+        self.export_status_label = SiLabel(self)
+        self.export_status_label.setSiliconWidgetFlag(Si.AdjustSizeOnTextChanged)
+        self.export_status_label.setFont(SiFont.getFont(size=13))
+        self.export_status_label.setTextColor(self.getColor(SiColor.TEXT_D))
+        self.export_status_label.setText("Idle")
+        export_btn_row.addWidget(self.export_status_label, side="left")
+
+        self.titled_group.addWidget(export_btn_row)
+
+        # Console output for the export subprocess
+        self.export_console = QTextEdit(self)
+        self.export_console.setReadOnly(True)
+        self.export_console.setFixedHeight(200)
+        bg = SiGlobal.siui.colors['INTERFACE_BG_A']
+        fg = SiGlobal.siui.colors['TEXT_B']
+        self.export_console.setStyleSheet(
+            f"QTextEdit {{"
+            f"  background-color: {bg}; color: {fg}; border: none;"
+            f"  border-radius: 8px;"
+            f"  font-family: 'Consolas', 'Monaco', 'Courier New', monospace;"
+            f"  font-size: 12px; padding: 12px;"
+            f"}}"
+            f"QScrollBar:vertical {{"
+            f"  background: transparent; width: 6px; margin: 4px 2px;"
+            f"}}"
+            f"QScrollBar::handle:vertical {{"
+            f"  background: rgba(255,255,255,0.15); border-radius: 3px; min-height: 20px;"
+            f"}}"
+            f"QScrollBar::handle:vertical:hover {{ background: rgba(255,255,255,0.3); }}"
+            f"QScrollBar::add-line:vertical, QScrollBar::sub-line:vertical {{ height: 0; }}"
+            f"QScrollBar::add-page:vertical, QScrollBar::sub-page:vertical {{ background: none; }}"
+        )
+        self.titled_group.addWidget(self.export_console)
+
+        self._export_process = None
+        self._export_model_paths = []
+        self._refreshExportModels()
+
+    def _scanExportModels(self):
+        """Return a list of (display_name, absolute_path) for every .pt under app/models and app/models/user."""
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        models_root = os.path.join(app_dir, "models")
+        found = []
+        seen = set()
+        # Direct files in app/models/
+        if os.path.isdir(models_root):
+            for name in sorted(os.listdir(models_root)):
+                full = os.path.join(models_root, name)
+                if os.path.isfile(full) and name.lower().endswith(".pt"):
+                    if full not in seen:
+                        found.append((name, full))
+                        seen.add(full)
+        # Recursive under app/models/user/
+        user_root = os.path.join(models_root, "user")
+        if os.path.isdir(user_root):
+            for dirpath, _, files in os.walk(user_root):
+                for name in sorted(files):
+                    if name.lower().endswith(".pt"):
+                        full = os.path.join(dirpath, name)
+                        if full in seen:
+                            continue
+                        rel = os.path.relpath(full, models_root).replace(os.sep, "/")
+                        found.append((rel, full))
+                        seen.add(full)
+        return found
+
+    def _refreshExportModels(self):
+        """Populate the model combobox from the on-disk model lists."""
+        menu = self.export_model_combo.menu()
+
+        # Remove all existing options. SiDenseVContainer tracks widgets
+        # itself rather than through a Qt layout, so the lists have to be
+        # emptied by hand.
+        try:
+            for option in list(menu.options_):
+                option.setParent(None)
+                option.deleteLater()
+            menu.options_.clear()
+            body = getattr(menu, "body_", None)
+            if body is not None:
+                body.widgets_top = []
+                body.widgets_bottom = []
+                body.adjustSize()
+            menu.current_index = None
+            menu.current_value = None
+        except Exception:
+            pass
+
+        self._export_model_paths = self._scanExportModels()
+        if not self._export_model_paths:
+            menu.addOption("(no .pt models found)", value="")
+        else:
+            for display, _ in self._export_model_paths:
+                menu.addOption(display, value=display)
+        menu.setIndex(0)
+
+        # setIndex does not emit indexChanged, so the value_label stays stale
+        # until the user picks an option. Sync the label manually so refreshes
+        # display the first entry right away.
+        try:
+            first_text = menu.options()[0].text()
+            self.export_model_combo.value_label.setText(first_text)
+        except Exception:
+            pass
+
+        # Update path label to match the current combo selection
+        self._updateExportModelPathFromCombo(0)
+
+    def _updateExportModelPathFromCombo(self, idx: int):
+        """Sync the path label + tooltip with the combo entry at ``idx``."""
+        if 0 <= idx < len(self._export_model_paths):
+            display, full = self._export_model_paths[idx]
+            self._export_selected_model = full
+            self.export_model_path_label.setText(f"→ {full}")
+            self.export_model_combo.setToolTip(full)
+        else:
+            self._export_selected_model = None
+            self.export_model_path_label.setText("")
+            self.export_model_combo.setToolTip("")
+
+    def _onExportModelComboChanged(self, idx: int):
+        self._updateExportModelPathFromCombo(idx)
+
+    def _onBrowseExportModel(self):
+        """Let the user pick any .pt file on disk and add it to the combo."""
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        start_dir = os.path.join(app_dir, "models")
+        path, _ = QFileDialog.getOpenFileName(
+            self, "Select .pt Model", start_dir, "PyTorch Models (*.pt)"
+        )
+        if not path:
+            return
+        path = os.path.normpath(path)
+
+        # If the picked path is already in the combo, just select it
+        for i, (_, full) in enumerate(self._export_model_paths):
+            if os.path.normpath(full) == path:
+                self.export_model_combo.menu().setIndex(i)
+                try:
+                    self.export_model_combo.value_label.setText(self.export_model_combo.menu().options()[i].text())
+                except Exception:
+                    pass
+                self._updateExportModelPathFromCombo(i)
+                return
+
+        # Otherwise append it as a new option (display = absolute path)
+        display = path
+        self._export_model_paths.append((display, path))
+        menu = self.export_model_combo.menu()
+        menu.addOption(display, value=display)
+        new_idx = len(self._export_model_paths) - 1
+        menu.setIndex(new_idx)
+        try:
+            self.export_model_combo.value_label.setText(menu.options()[new_idx].text())
+        except Exception:
+            pass
+        self._updateExportModelPathFromCombo(new_idx)
+
+    def _onStartExport(self):
+        if self._export_process is not None and self._export_process.state() == QProcess.Running:
+            self._showNotification("Export", "An export is already running.", 2)
+            return
+
+        model_path = getattr(self, "_export_selected_model", None)
+        if not model_path or not os.path.exists(model_path):
+            self._showNotification("Export", "Please select a valid .pt model.", 3)
+            return
+        display = os.path.basename(model_path)
+        imgsz = int(self.export_imgsz.value())
+        half = "1" if self.export_half.isChecked() else "0"
+
+        # Locate export runner
+        app_dir = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
+        project_root = os.path.dirname(app_dir)
+        runner_path = os.path.join(project_root, "backend", "python", "Train", "export_runner.py")
+        if not os.path.exists(runner_path):
+            self._showNotification("Export", f"Runner script not found: {runner_path}", 3)
+            return
+
+        self.export_console.clear()
+        self._appendExportLog(f"Exporting {display} at {imgsz}x{imgsz} (FP{'16' if half == '1' else '32'})")
+        self.export_status_label.setText(f"Exporting {display}...")
+        self.btn_start_export.setEnabled(False)
+        self.btn_cancel_export.setEnabled(True)
+
+        self._export_process = QProcess(self)
+        self._export_process.setProcessChannelMode(QProcess.MergedChannels)
+        self._export_process.readyReadStandardOutput.connect(self._onExportStdout)
+        self._export_process.finished.connect(self._onExportFinished)
+        self._export_process.errorOccurred.connect(self._onExportError)
+        self._export_process.setWorkingDirectory(os.path.dirname(runner_path))
+
+        self._export_process.start(sys.executable, [runner_path, model_path, str(imgsz), half])
+
+    def _onCancelExport(self):
+        if self._export_process and self._export_process.state() == QProcess.Running:
+            self._appendExportLog("Cancelling export...")
+            self._export_process.terminate()
+            if not self._export_process.waitForFinished(5000):
+                self._export_process.kill()
+                self._export_process.waitForFinished(3000)
+        self.btn_cancel_export.setEnabled(False)
+
+    def _onExportStdout(self):
+        if not self._export_process:
+            return
+        data = self._export_process.readAllStandardOutput()
+        text = bytes(data).decode('utf-8', errors='replace')
+        for line in text.splitlines():
+            line = _ANSI_RE.sub('', line).rstrip()
+            if not line:
+                continue
+            m = _TQDM_RE.search(line)
+            if m and int(m.group(1)) < 100:
+                continue
+            self._appendExportLog(line)
+
+    def _appendExportLog(self, line: str):
+        from datetime import datetime
+        timestamp = datetime.now().strftime("%H:%M:%S")
+        lu = line.upper()
+        if any(k in lu for k in ("ERROR", "FAILED", "TRACEBACK", "EXCEPTION")):
+            color = "#ff4444"
+        elif any(k in lu for k in ("WARNING", "WARN")):
+            color = "#ffaa00"
+        elif any(k in lu for k in ("SUCCESS", "COMPLETED", "OK")):
+            color = "#44cc44"
+        else:
+            color = SiGlobal.siui.colors['TEXT_B']
+        text_color = SiGlobal.siui.colors['TEXT_D']
+        escaped = line.replace("&", "&amp;").replace("<", "&lt;").replace(">", "&gt;")
+        formatted = (
+            f'<span style="color:{text_color}">[{timestamp}]</span> '
+            f'<span style="color:{color}">{escaped}</span>'
+        )
+        self.export_console.append(formatted)
+        sb = self.export_console.verticalScrollBar()
+        sb.setValue(sb.maximum())
+
+    def _onExportFinished(self, exit_code, exit_status):
+        self.btn_start_export.setEnabled(True)
+        self.btn_cancel_export.setEnabled(False)
+        if exit_code == 0:
+            self.export_status_label.setText("Export completed successfully.")
+            self._showNotification("Engine Export", "TensorRT engine export finished.", 1)
+        else:
+            self.export_status_label.setText(f"Export failed (exit code {exit_code}).")
+            self._showNotification("Engine Export", f"Export failed with exit code {exit_code}.", 3)
+        self._export_process = None
+
+    def _onExportError(self, error):
+        self._appendExportLog(f"Process error: {error}")
+        self.export_status_label.setText("Export process error.")
 
     # ── Helpers ────────────────────────────────────────────────────
 
