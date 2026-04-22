@@ -59,8 +59,10 @@ class VisionTrackerApp(SiliconApplication):
         # Window title and icon
         self.setWindowTitle("Vision Tracker")
 
-        # Set window icon
-        icon_path = os.path.join(current_dir, "img", "app_icon.png")
+        # Set window icon (prefer .ico for multi-size taskbar rendering on Windows)
+        ico_path = os.path.join(current_dir, "img", "app_icon.ico")
+        png_path = os.path.join(current_dir, "img", "app_icon.png")
+        icon_path = ico_path if os.path.exists(ico_path) else png_path
         if os.path.exists(icon_path):
             self.setWindowIcon(QIcon(icon_path))
 
@@ -103,16 +105,6 @@ class VisionTrackerApp(SiliconApplication):
             side="top"
         )
 
-        # Logs page - top
-        self.logs_page = LogsPage(self)
-        self.logs_page.setTrackerManager(self.tracker_manager)
-        self.layerMain().addPage(
-            self.logs_page,
-            icon=SiGlobal.siui.iconpack.get("ic_fluent_document_text_clock_filled"),
-            hint="Logs",
-            side="top"
-        )
-
         # Phone Camera page - top
         self.phone_camera_page = PhoneCameraPage(self)
         self.layerMain().addPage(
@@ -147,6 +139,20 @@ class VisionTrackerApp(SiliconApplication):
         )
         self.custom_tracker_button_index = len(_nav.buttons) - 1
         _btn = _nav.buttons[self.custom_tracker_button_index]
+        _btn.hide()
+        _nav.container.widgets_top.remove(_btn)
+
+        # Logs page - top (hidden by default, shown in advanced mode)
+        self.logs_page = LogsPage(self)
+        self.logs_page.setTrackerManager(self.tracker_manager)
+        self.layerMain().addPage(
+            self.logs_page,
+            icon=SiGlobal.siui.iconpack.get("ic_fluent_document_text_clock_filled"),
+            hint="Logs",
+            side="top"
+        )
+        self.logs_button_index = len(_nav.buttons) - 1
+        _btn = _nav.buttons[self.logs_button_index]
         _btn.hide()
         _nav.container.widgets_top.remove(_btn)
         _nav.container.arrangeWidget()
@@ -225,7 +231,7 @@ class VisionTrackerApp(SiliconApplication):
         SiGlobal.siui.reloadAllWindowsStyleSheet()
 
     def setAdvancedMode(self, enabled: bool):
-        """Show or hide the Training and Custom Tracker sidebar buttons with animation."""
+        """Show or hide the Training, Custom Tracker and Logs sidebar buttons with animation."""
         from PyQt5.QtCore import QVariantAnimation, QEasingCurve
 
         navigator = self.layerMain().page_view.page_navigator
@@ -233,6 +239,8 @@ class VisionTrackerApp(SiliconApplication):
         buttons = navigator.buttons
         training_btn = buttons[self.training_button_index]
         custom_tracker_btn = buttons[self.custom_tracker_button_index]
+        logs_btn = buttons[self.logs_button_index]
+        advanced_btns = (training_btn, custom_tracker_btn, logs_btn)
 
         # Stop any in-progress animation
         if hasattr(self, '_advanced_mode_anim') and self._advanced_mode_anim is not None:
@@ -240,11 +248,9 @@ class VisionTrackerApp(SiliconApplication):
             self._advanced_mode_anim = None
 
         if enabled:
-            if training_btn not in container.widgets_top:
-                container.widgets_top.append(training_btn)
-            if custom_tracker_btn not in container.widgets_top:
-                container.widgets_top.append(custom_tracker_btn)
-            for btn in (training_btn, custom_tracker_btn):
+            for btn in advanced_btns:
+                if btn not in container.widgets_top:
+                    container.widgets_top.append(btn)
                 btn.setFixedHeight(0)
                 btn.show()
             container.arrangeWidget()
@@ -257,12 +263,12 @@ class VisionTrackerApp(SiliconApplication):
 
             def _on_value_show(val):
                 h = int(val)
-                training_btn.setFixedHeight(h)
-                custom_tracker_btn.setFixedHeight(h)
+                for b in advanced_btns:
+                    b.setFixedHeight(h)
                 container.arrangeWidget()
 
             def _on_done_show():
-                for b in (training_btn, custom_tracker_btn):
+                for b in advanced_btns:
                     b.setMinimumHeight(0)
                     b.setMaximumHeight(16777215)
                     b.resize(40, 40)
@@ -285,12 +291,12 @@ class VisionTrackerApp(SiliconApplication):
 
             def _on_value_hide(val):
                 h = int(val)
-                training_btn.setFixedHeight(h)
-                custom_tracker_btn.setFixedHeight(h)
+                for b in advanced_btns:
+                    b.setFixedHeight(h)
                 container.arrangeWidget()
 
             def _on_done_hide():
-                for b in (training_btn, custom_tracker_btn):
+                for b in advanced_btns:
                     if b in container.widgets_top:
                         container.widgets_top.remove(b)
                     b.hide()

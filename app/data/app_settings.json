@@ -9,6 +9,8 @@
     "show_error_vector": true
   },
   "hotkeys": {
-    "lineup_switch": "f7"
+    "lineup_switch": "f7",
+    "calibrate": "f6",
+    "aim_key": "caps_lock"
   }
 }

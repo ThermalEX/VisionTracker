@@ -1,9 +1,6 @@
 {
-  "num_classes": 4,
+  "num_classes": 1,
   "class_names": [
-    "ct_head",
-    "ct_body",
-    "t_head",
-    "t_body"
+    "car"
   ]
 }

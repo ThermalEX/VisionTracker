@@ -144,12 +144,12 @@ class RegisterPanel(SiWidget):
         self.countdown_label.hide()
 
         # === Common Elements ===
-        # Error label
+        # Error label - placed above the submit button (y=410) so it isn't covered
         self.error_label = SiLabel(self)
         self.error_label.setFont(SiFont.getFont(size=12))
         self.error_label.setTextColor("#FF6B6B")
         self.error_label.setFixedWidth(320)
-        self.error_label.move(40, 400)
+        self.error_label.move(40, 388)
         self.error_label.hide()
 
         # Next/Submit button
@@ -347,6 +347,7 @@ class RegisterPanel(SiWidget):
         self.error_label.setText(message)
         self.error_label.adjustSize()
         self.error_label.show()
+        self.error_label.raise_()
 
     def _hideError(self):
         """Hide error message."""

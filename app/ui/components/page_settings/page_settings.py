@@ -349,7 +349,7 @@ class SettingsPage(SiPage):
         self.titled_group.addTitle("Advanced Features")
 
         self.advanced_mode_card = SiOptionCardLinear(self)
-        self.advanced_mode_card.setTitle("Advanced Mode", "Show Training and Custom Tracker pages in the sidebar")
+        self.advanced_mode_card.setTitle("Advanced Mode", "Show Training, Custom Tracker and Logs pages in the sidebar")
         self.advanced_mode_card.load(SiGlobal.siui.iconpack.get("ic_fluent_developer_board_regular"))
         self.advanced_mode_switch = SiSwitch(self)
         self.advanced_mode_switch.toggled.connect(self._onAdvancedModeToggled)
