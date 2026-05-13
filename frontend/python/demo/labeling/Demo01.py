@@ -22,7 +22,7 @@ while True:
     except ValueError:
         print("请输入数字！")
 
-model = YOLO("../../models/best 12.10.pt")
+model = YOLO("frontend\\python\\models\\10w v8.pt")
 device = torch.device('cuda')
 model.to(device)
 cv2.namedWindow("Window Capture", cv2.WINDOW_NORMAL)

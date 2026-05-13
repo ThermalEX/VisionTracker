@@ -4,10 +4,11 @@ from datetime import datetime
 
 from PyQt5.QtCore import QPointF, QRectF, Qt
 from PyQt5.QtGui import QColor, QFont, QLinearGradient, QPainter, QPainterPath, QPen, QTextCursor
-from PyQt5.QtWidgets import QPushButton, QScrollBar, QWidget, QTextEdit
+from PyQt5.QtWidgets import QPushButton, QWidget, QTextEdit
 
 from siui.components import SiLabel, SiSimpleButton, SiTitledWidgetGroup
 from siui.components.page import SiPage
+from siui.components.slider_ import SiScrollBar
 from siui.core import SiColor, SiGlobal
 from siui.gui import SiFont
 
@@ -213,21 +214,18 @@ class _ScrollableLineChartCard(_PanelCard):
         self._values: list = []
         self._current_label = ""
 
-        self._scrollbar = QScrollBar(Qt.Horizontal, self)
-        self._scrollbar.setGeometry(20, 238, self.width() - 40, 10)
+        self._scrollbar = SiScrollBar(self)
+        self._scrollbar.setOrientation(Qt.Horizontal)
+        self._scrollbar.setGeometry(20, 238, self.width() - 40, 8)
         self._scrollbar.setRange(0, 0)
         self._scrollbar.setSingleStep(1)
         self._scrollbar.setPageStep(self.VIEWPORT)
         self._scrollbar.valueChanged.connect(self.update)
         self._scrollbar.setStyleSheet(
             "QScrollBar:horizontal {"
-            "  background: #1E1A26; height: 8px; border-radius: 4px;"
+            "    background-color: transparent;"
+            "    border: none;"
             "}"
-            "QScrollBar::handle:horizontal {"
-            "  background: #5A5066; border-radius: 4px; min-width: 20px;"
-            "}"
-            "QScrollBar::add-line:horizontal,"
-            "QScrollBar::sub-line:horizontal { width: 0; }"
         )
 
     def setSeries(self, values, current_label: str = ""):
@@ -377,18 +375,19 @@ class _LogPanel(_PanelCard):
             "  font-family: 'Consolas', 'Courier New', monospace;"
             "  font-size: 11px;"
             "}"
-            "QScrollBar:vertical {"
-            "  background: #1E1A26;"
-            "  width: 5px;"
-            "  border-radius: 2px;"
-            "}"
-            "QScrollBar::handle:vertical {"
-            "  background: #5A5066;"
-            "  border-radius: 2px;"
-            "}"
-            "QScrollBar::add-line:vertical,"
-            "QScrollBar::sub-line:vertical { height: 0; }"
         )
+
+        # Themed scrollbar matching the Home page console
+        self._text_scrollbar = SiScrollBar(self._text)
+        self._text_scrollbar.setOrientation(Qt.Vertical)
+        self._text_scrollbar.setFixedWidth(8)
+        self._text_scrollbar.setStyleSheet(
+            "QScrollBar:vertical {"
+            "    background-color: transparent;"
+            "    border: none;"
+            "}"
+        )
+        self._text.setVerticalScrollBar(self._text_scrollbar)
 
     def paintEvent(self, event):
         super().paintEvent(event)

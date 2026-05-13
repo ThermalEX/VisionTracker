@@ -750,7 +750,7 @@ class ConfigPage(SiPage):
         self.snap_threshold.setTitle("Threshold")
         self.snap_threshold.setHint("Distance threshold for snap activation (px)")
         self.snap_threshold.resize(180, 84)
-        self.snap_threshold.setMinimum(5)
+        self.snap_threshold.setMinimum(0)
         self.snap_threshold.setMaximum(200)
 
         self.snap_sensitivity = SiSliderDoubleSpinBox(self)

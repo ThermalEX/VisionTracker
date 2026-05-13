@@ -286,7 +286,6 @@ class TrackerWorker(QThread):
 
         Config.SNAP_THRESHOLD = self.config.get('snap_threshold', 40)
         Config.SNAP_SENSITIVITY = self.config.get('snap_sensitivity', 2.2)
-        Config.SNAP_SENSITIVITY = self.config.get('snap_sensitivity', 2.2)
         Config.SNAP_COOLDOWN = self.config.get('snap_cooldown', 0.2)
         Config.SNAP_UPDATE_THRESHOLD = self.config.get('snap_update_threshold', 20)
 
@@ -325,31 +324,8 @@ class TrackerWorker(QThread):
         Config.CROSSHAIR_DOT_SIZE = self.config.get('crosshair_dot_size', 2)
         Config.OVERLAY_OPACITY = self.config.get('overlay_opacity', 100)
 
-        # Target class: int / list of ints / None for all classes
-        target_class_id = self.config.get('target_class_id', None)
-        Config.PREFER_CLASS_IDS = None
-        if target_class_id is None:
-            aim_part = self.config.get('aim_part', None)
-            if aim_part:
-                try:
-                    import json as _json, os as _os
-                    _cfg_path = _os.path.join(
-                        _os.path.dirname(_os.path.dirname(_os.path.abspath(__file__))),
-                        'data', 'class_config.json'
-                    )
-                    with open(_cfg_path, 'r') as _f:
-                        _cls = _json.load(_f).get('class_names', [])
-                    if aim_part == 'head_priority':
-                        # All classes enabled; prefer head classes over body
-                        head_ids = [i for i, n in enumerate(_cls) if 'head' in n.lower()]
-                        Config.PREFER_CLASS_IDS = head_ids if head_ids else None
-                    else:
-                        matching = [i for i, n in enumerate(_cls) if aim_part.lower() in n.lower()]
-                        if matching:
-                            target_class_id = matching[0] if len(matching) == 1 else matching
-                except Exception:
-                    pass
-        Config.TARGET_CLASS_ID = target_class_id
+        # Resolve aim_part → Config.TARGET_CLASS_ID / Config.PREFER_CLASS_IDS
+        self._resolve_target_classes()
 
         # Operation mode: auto_trigger, auto_aim, auto_aim_fire
         operation_mode = self.config.get('operation_mode', 'auto_aim_fire')
@@ -369,6 +345,55 @@ class TrackerWorker(QThread):
             "pid_kp": Config.PID_KP,
         })
         self._emit_runtime_stats(force=True)
+
+    def _resolve_target_classes(self):
+        """
+        Resolve aim_part → Config.TARGET_CLASS_ID / Config.PREFER_CLASS_IDS.
+
+        Prefers the live model's ``names`` (if a detector is already loaded)
+        and falls back to ``data/class_config.json`` otherwise.
+        """
+        target_class_id = self.config.get('target_class_id', None)
+        Config.PREFER_CLASS_IDS = None
+
+        if target_class_id is not None:
+            Config.TARGET_CLASS_ID = target_class_id
+            return
+
+        aim_part = self.config.get('aim_part', None)
+        if not aim_part:
+            Config.TARGET_CLASS_ID = None
+            return
+
+        class_names = []
+        try:
+            from core.detector import get_model_class_names, get_default_class_config_path
+            model = getattr(self._detector, 'model', None) if self._detector else None
+            class_names = get_model_class_names(model)
+            if not class_names:
+                import json as _json
+                cfg_path = get_default_class_config_path()
+                if os.path.exists(cfg_path):
+                    with open(cfg_path, 'r', encoding='utf-8') as f:
+                        class_names = _json.load(f).get('class_names', []) or []
+        except Exception:
+            class_names = []
+
+        if not class_names:
+            Config.TARGET_CLASS_ID = None
+            return
+
+        aim_lower = aim_part.lower()
+        if aim_part == 'head_priority':
+            head_ids = [i for i, n in enumerate(class_names) if 'head' in n.lower()]
+            Config.PREFER_CLASS_IDS = head_ids or None
+            Config.TARGET_CLASS_ID = None
+        else:
+            matching = [i for i, n in enumerate(class_names) if aim_lower in n.lower()]
+            if matching:
+                Config.TARGET_CLASS_ID = matching[0] if len(matching) == 1 else matching
+            else:
+                Config.TARGET_CLASS_ID = None
 
     def _init_components(self):
         """Initialize all tracking components."""
@@ -410,7 +435,7 @@ class TrackerWorker(QThread):
 
             # Initialize queues and events first
             self._frame_queue = Queue(maxsize=2)
-            self._overlay_queue = Queue(maxsize=2) if Config.SHOW_OVERLAY else None
+            self._overlay_queue = Queue(maxsize=2)
             self._running_event = Event()
             self._running_event.set()
 
@@ -430,6 +455,30 @@ class TrackerWorker(QThread):
                         self.log_message.emit("No model specified or model not found", "WARN")
                         self._detector = Detector()
 
+                    # Sync class_config.json with the model that just loaded and
+                    # re-resolve aim_part now that real class names are available
+                    try:
+                        from core.detector import sync_class_config_from_model
+                        synced = sync_class_config_from_model(
+                            getattr(self._detector, 'model', None)
+                        )
+                        if synced:
+                            self.log_message.emit(
+                                f"Class config synced from model: {synced}", "INFO"
+                            )
+                    except Exception as _sync_exc:
+                        self.log_message.emit(
+                            f"Class config sync skipped: {_sync_exc}", "WARN"
+                        )
+                    self._resolve_target_classes()
+                    cls_label = (
+                        str(Config.TARGET_CLASS_ID)
+                        if Config.TARGET_CLASS_ID is not None else "All"
+                    )
+                    self.log_message.emit(
+                        f"Target class resolved: {cls_label}", "INFO"
+                    )
+
                     # Check admin privileges
                     import ctypes
                     is_admin = ctypes.windll.shell32.IsUserAnAdmin()
@@ -448,12 +497,12 @@ class TrackerWorker(QThread):
                     self._capture_process = CaptureProcess(self._frame_queue, self._running_event)
                     self._capture_process.start(window_choice, all_windows)
 
-                    # Start overlay process (will be hidden behind video)
-                    if Config.SHOW_OVERLAY:
-                        overlay_info = self._read_overlay_info()
-                        self._overlay_process = OverlayProcess(self._overlay_queue, self._running_event)
-                        self._overlay_process.start(win_x, win_y, win_w, win_h,
-                                                    overlay_info=overlay_info)
+                    # Always start overlay process; SHOW_OVERLAY=False is enforced
+                    # by sending opacity=0 so the toggle works at runtime.
+                    overlay_info = self._read_overlay_info()
+                    self._overlay_process = OverlayProcess(self._overlay_queue, self._running_event)
+                    self._overlay_process.start(win_x, win_y, win_w, win_h,
+                                                overlay_info=overlay_info)
                 except Exception as e:
                     init_error[0] = str(e)
 
@@ -606,8 +655,8 @@ class TrackerWorker(QThread):
                             self._aim_controller.reset()
                         last_target_id = None
 
-            # Send overlay data
-            if self._overlay_queue and Config.SHOW_OVERLAY:
+            # Send overlay data (opacity is forced to 0 when SHOW_OVERLAY is False)
+            if self._overlay_queue:
                 try:
                     while not self._overlay_queue.empty():
                         self._overlay_queue.get_nowait()
@@ -636,7 +685,7 @@ class TrackerWorker(QThread):
                         'crosshair_color': Config.CROSSHAIR_COLOR,
                         'crosshair_center_dot': Config.CROSSHAIR_CENTER_DOT,
                         'crosshair_dot_size': Config.CROSSHAIR_DOT_SIZE,
-                        'overlay_opacity': Config.OVERLAY_OPACITY,
+                        'overlay_opacity': Config.OVERLAY_OPACITY if Config.SHOW_OVERLAY else 0,
                     })
                 except Exception:
                     pass
@@ -737,7 +786,7 @@ class TrackerWorker(QThread):
 
     def _send_calibration_overlay(self, cx, cy, x1, y1, x2, y2, calib_move=None):
         """Send overlay data during calibration."""
-        if self._overlay_queue and Config.SHOW_OVERLAY:
+        if self._overlay_queue:
             try:
                 while not self._overlay_queue.empty():
                     self._overlay_queue.get_nowait()
@@ -762,7 +811,7 @@ class TrackerWorker(QThread):
                     'crosshair_color': Config.CROSSHAIR_COLOR,
                     'crosshair_center_dot': Config.CROSSHAIR_CENTER_DOT,
                     'crosshair_dot_size': Config.CROSSHAIR_DOT_SIZE,
-                    'overlay_opacity': Config.OVERLAY_OPACITY,
+                    'overlay_opacity': Config.OVERLAY_OPACITY if Config.SHOW_OVERLAY else 0,
                 })
             except Exception:
                 pass
@@ -1067,11 +1116,19 @@ class TrackerManager(QObject):
         label = "All"
 
         try:
-            import json as _json
-            app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
-            cfg_path = os.path.join(app_dir, "data", "class_config.json")
-            with open(cfg_path, "r", encoding="utf-8") as f:
-                class_names = _json.load(f).get("class_names", [])
+            # Prefer live model.names so this stays consistent even if
+            # class_config.json is stale relative to the loaded model.
+            class_names = []
+            detector = getattr(self._worker, "_detector", None) if self._worker else None
+            if detector is not None:
+                from core.detector import get_model_class_names
+                class_names = get_model_class_names(getattr(detector, "model", None))
+            if not class_names:
+                import json as _json
+                from core.detector import get_default_class_config_path
+                cfg_path = get_default_class_config_path()
+                with open(cfg_path, "r", encoding="utf-8") as f:
+                    class_names = _json.load(f).get("class_names", [])
 
             team_lower = None if team == "ALL" else team.lower()
             matching_ids = [

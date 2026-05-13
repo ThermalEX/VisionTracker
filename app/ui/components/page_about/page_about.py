@@ -7,7 +7,6 @@ from siui.components import (
     SiDenseVContainer,
     SiLabel,
     SiOptionCardLinear,
-    SiPixLabel,
     SiSimpleButton,
     SiTitledWidgetGroup,
 )
@@ -120,8 +119,6 @@ class AboutPage(SiPage):
 
             group.addWidget(self.option_card_siui)
 
-        # Add placeholder
         self.titled_widget_group.addPlaceholder(64)
 
-        # Set attachment
         self.setAttachment(self.titled_widget_group)

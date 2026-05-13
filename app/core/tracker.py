@@ -257,7 +257,7 @@ class AimController:
         if self._post_snap_frames > 0:
             self._post_snap_frames -= 1
 
-        if error_dist > Config.SNAP_THRESHOLD and self._post_snap_frames == 0:
+        if error_dist > Config.SNAP_THRESHOLD and (Config.SNAP_THRESHOLD == 0 or self._post_snap_frames == 0):
             # === SNAP mode for large errors ===
             self.current_mode = 'SNAP'
             can_move = self._check_can_move(
@@ -347,7 +347,6 @@ class AimController:
     def calibrate(self, model, frame_queue, overlay_queue=None):
         """
         Calibrate snap sensitivity.
-        (Implementation would go here - simplified for module structure)
+        Calibration is handled by TrackerWorker._run_calibration().
         """
-        # TODO: Implement calibration logic
         pass

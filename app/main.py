@@ -5,12 +5,14 @@ import sys
 from PyQt5.QtWidgets import QApplication
 from PyQt5.QtGui import QIcon
 
+APP_DIR = os.path.dirname(os.path.abspath(__file__))
+if APP_DIR not in sys.path:
+    sys.path.insert(0, APP_DIR)
+
 from ui import VisionTrackerApp
 
 
 def _set_app_user_model_id():
-    """Set a unique AppUserModelID so Windows taskbar uses our icon
-    instead of grouping the process under python.exe."""
     if sys.platform != "win32":
         return
     try:
@@ -29,7 +31,7 @@ def main():
 
     # Apply icon at the QApplication level as well so all windows inherit it
     img_dir = os.path.join(
-        os.path.dirname(os.path.abspath(__file__)), "ui", "img"
+        APP_DIR, "ui", "img"
     )
     ico_path = os.path.join(img_dir, "app_icon.ico")
     png_path = os.path.join(img_dir, "app_icon.png")

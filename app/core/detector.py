@@ -1,5 +1,6 @@
 """Object detection module using YOLO."""
 
+import json
 import os
 import glob
 import math
@@ -7,6 +8,63 @@ import torch
 from ultralytics import YOLO
 
 from utils.config import Config
+
+
+def get_model_class_names(model) -> list:
+    """Return YOLO model class names as a list ordered by class id."""
+    if model is None:
+        return []
+    names = getattr(model, "names", None)
+    if names is None:
+        return []
+    if isinstance(names, dict):
+        try:
+            return [names[i] for i in sorted(names.keys(), key=lambda k: int(k))]
+        except Exception:
+            return list(names.values())
+    return list(names)
+
+
+def get_default_class_config_path() -> str:
+    """Resolve app/data/class_config.json relative to this module."""
+    return os.path.join(
+        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        "data", "class_config.json",
+    )
+
+
+def sync_class_config_from_model(model, config_path: str = None) -> list:
+    """
+    Write ``model.names`` into class_config.json so other parts of the app
+    (tracker, training page) stay in sync with the model currently loaded.
+
+    Skips the write when the file already matches, avoiding spurious disk churn.
+    Returns the list of names that the file ends up containing.
+    """
+    names = get_model_class_names(model)
+    if not names:
+        return []
+
+    path = config_path or get_default_class_config_path()
+    data = {"num_classes": len(names), "class_names": list(names)}
+
+    try:
+        if os.path.exists(path):
+            with open(path, "r", encoding="utf-8") as f:
+                existing = json.load(f)
+            if existing.get("class_names") == data["class_names"]:
+                return names
+    except Exception:
+        pass
+
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=2, ensure_ascii=False)
+    except Exception:
+        pass
+
+    return names
 
 
 class Detector:

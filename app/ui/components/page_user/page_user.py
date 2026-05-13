@@ -2,7 +2,6 @@
 
 import os
 import re
-import shutil
 from pathlib import Path
 from PyQt5.QtCore import Qt, pyqtSignal, QTimer, QPropertyAnimation, QEasingCurve
 from PyQt5.QtGui import QFont, QColor, QPixmap, QImage, QPainter, QPainterPath
@@ -693,7 +692,6 @@ class UserPage(SiPage):
 
     def _loadAvatar(self):
         """Load user avatar."""
-        # Ensure avatars directory exists
         avatars_dir.mkdir(parents=True, exist_ok=True)
 
         if self.current_user and self.current_user.avatar_path:
@@ -702,20 +700,16 @@ class UserPage(SiPage):
                 self.avatar_label.load(str(avatar_path))
                 return
 
-        # Load default avatar or create placeholder
         default_avatar = avatars_dir / 'default.png'
         if default_avatar.exists():
             self.avatar_label.load(str(default_avatar))
         else:
-            # Create a simple colored circle as default
             self._createDefaultAvatar()
 
     def _createDefaultAvatar(self):
-        """Create a default avatar placeholder."""
-        # Clear any previously loaded image
+        """Show the built-in default avatar style."""
         self.avatar_label.path_ = None
         self.avatar_label.setPixmap(QPixmap())
-        # Show colored background as placeholder
         self.avatar_container.setStyleSheet(
             "background-color: #D087DF; border-radius: 40px;"
         )
@@ -738,34 +732,27 @@ class UserPage(SiPage):
             return
 
         try:
-            # Ensure avatars directory exists
             avatars_dir.mkdir(parents=True, exist_ok=True)
 
-            # Load and resize image
             image = QImage(source_path)
             if image.isNull():
                 return
 
-            # Scale to 128x128
             scaled = image.scaled(128, 128, Qt.KeepAspectRatioByExpanding, Qt.SmoothTransformation)
 
-            # Crop to center if needed
             if scaled.width() > 128 or scaled.height() > 128:
                 x = (scaled.width() - 128) // 2
                 y = (scaled.height() - 128) // 2
                 scaled = scaled.copy(x, y, 128, 128)
 
-            # Save to avatars directory
             avatar_filename = f"user_{self.current_user.id}.png"
             avatar_path = avatars_dir / avatar_filename
             scaled.save(str(avatar_path), "PNG")
 
-            # Update database
             if self.user_repo:
                 self.user_repo.update_avatar(self.current_user.id, avatar_filename)
                 self.current_user.avatar_path = avatar_filename
 
-            # Reload avatar display
             self.avatar_label.load(str(avatar_path))
 
         except Exception as e:

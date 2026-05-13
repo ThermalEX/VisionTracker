@@ -1,7 +1,7 @@
 {
   "advanced_mode": true,
   "overlay_info": {
-    "show_fps": true,
+    "show_fps": false,
     "show_ctrl_params": true,
     "show_mode": true,
     "show_status": true,

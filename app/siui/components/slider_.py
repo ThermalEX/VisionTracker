@@ -160,9 +160,11 @@ class SiSlider(QAbstractSlider):
         thumb_width = self.style_data.thumb_width
         region = self.maximum() - self.minimum()
         if self.orientation() == Qt.Orientation.Horizontal:
-            p = min(1, max((pos.x() - thumb_width / 2) / (self.width() - thumb_width), 0))
+            denom = self.width() - thumb_width
+            p = 0.0 if denom <= 0 else min(1, max((pos.x() - thumb_width / 2) / denom, 0))
         else:
-            p = min(1, max(1 - (pos.y() - thumb_width / 2) / (self.height() - thumb_width), 0))
+            denom = self.height() - thumb_width
+            p = 0.0 if denom <= 0 else min(1, max(1 - (pos.y() - thumb_width / 2) / denom, 0))
         self.setValue(int(self.minimum() + region * p))
 
     def _setThumbHovering(self, state: bool) -> None:
@@ -174,7 +176,8 @@ class SiSlider(QAbstractSlider):
             self.thumb_color_ani.start()
 
     def _updateDraggingAnchor(self):
-        p = (self.value() - self.minimum()) / (self.maximum() - self.minimum())
+        region = self.maximum() - self.minimum()
+        p = 0.0 if region == 0 else (self.value() - self.minimum()) / region
         thumb_w = self.style_data.thumb_width
         thumb_h = self.style_data.thumb_height
         if self.orientation() == Qt.Orientation.Horizontal:
@@ -429,8 +432,10 @@ class SiCoordinatePicker2D(QWidget):
         margin = self.slider_x.style_data.thumb_width / 2
         slider_y_width = self.style_data.slider_y_width
         slider_x_height = self.style_data.slider_x_height
-        progress_x = (pos.x() - slider_y_width - margin) / (self.width() - slider_y_width - margin * 2)
-        progress_y = 1 - (pos.y() - margin) / (self.height() - margin * 2 - slider_x_height)
+        denom_x = self.width() - slider_y_width - margin * 2
+        denom_y = self.height() - margin * 2 - slider_x_height
+        progress_x = 0.0 if denom_x <= 0 else (pos.x() - slider_y_width - margin) / denom_x
+        progress_y = 0.0 if denom_y <= 0 else 1 - (pos.y() - margin) / denom_y
 
         self.slider_x.setValue(int(self.slider_x.minimum() +
                                    (self.slider_x.maximum() - self.slider_x.minimum()) * progress_x))
@@ -1214,9 +1219,11 @@ class SiScrollBar(QScrollBar):
         thumb_width = self.style_data.thumb_width
         region = self.maximum() - self.minimum()
         if self.orientation() == Qt.Orientation.Horizontal:
-            p = min(1, max((pos.x() - thumb_width / 2) / (self.width() - thumb_width), 0))
+            denom = self.width() - thumb_width
+            p = 0.0 if denom <= 0 else min(1, max((pos.x() - thumb_width / 2) / denom, 0))
         else:
-            p = min(1, max((pos.y() - thumb_width / 2) / (self.height() - thumb_width), 0))
+            denom = self.height() - thumb_width
+            p = 0.0 if denom <= 0 else min(1, max((pos.y() - thumb_width / 2) / denom, 0))
         self.setValue(int(self.minimum() + region * p))
 
     def _setThumbHovering(self, state: bool) -> None:
@@ -1228,7 +1235,8 @@ class SiScrollBar(QScrollBar):
             self.thumb_color_ani.start()
 
     def _updateDraggingAnchor(self):
-        p = (self.value() - self.minimum()) / (self.maximum() - self.minimum())
+        region = self.maximum() - self.minimum()
+        p = 0.0 if region == 0 else (self.value() - self.minimum()) / region
         thumb_w = self.style_data.thumb_width
         thumb_h = self.style_data.thumb_height
         if self.orientation() == Qt.Orientation.Horizontal:

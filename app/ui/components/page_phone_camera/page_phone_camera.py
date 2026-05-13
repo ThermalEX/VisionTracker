@@ -724,10 +724,18 @@ class PhoneCameraPage(SiPage):
             self._onLog("No model available to load.", "WARN")
             return
         try:
-            from core.detector import Detector
+            from core.detector import Detector, sync_class_config_from_model
             self._detector = Detector(self._found_models[idx])
             self._worker.set_detector(self._detector)
             self._rebuildClassCheckboxes()
+            try:
+                synced = sync_class_config_from_model(
+                    getattr(self._detector, "model", None)
+                )
+                if synced:
+                    self._onLog(f"Class config synced from model: {synced}", "INFO")
+            except Exception as sync_exc:
+                self._onLog(f"Class config sync skipped: {sync_exc}", "WARN")
             self._onLog(f"Model loaded: {os.path.basename(self._found_models[idx])}", "SUCCESS")
         except Exception as exc:
             self._detector = None

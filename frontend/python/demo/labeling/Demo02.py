@@ -95,7 +95,7 @@ while True:
 
 # 初始化 YOLO 模型
 print("正在加载 YOLO 模型...")
-model = YOLO("../../models/best 12.10.pt")
+model = YOLO("frontend\\python\\models\\10w v8.pt")
 device = torch.device('cuda' if torch.cuda.is_available() else 'cpu')
 print(f"使用设备: {device}")
 model.to(device)

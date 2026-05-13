@@ -71,13 +71,34 @@ python -m venv .venv
 pip install -r requirements.txt
 ```
 
-## Usage
+If you want to use `.engine` models, install TensorRT separately after the base dependencies are installed:
 
 ```bash
-# Run desktop application
-python -m app.main
+pip install tensorrt
+```
 
-# Or use entry point after installation
+TensorRT is optional. If you only use `.pt` models, `requirements.txt` is usually enough.
+
+## Usage
+
+The source entry point is `app/main.py`.
+
+```bash
+# Recommended: run the source entry directly
+python app/main.py
+```
+
+You can also use the interactive installer:
+
+```bash
+python installer.py
+```
+
+The installer can install `requirements.txt`, optionally try TensorRT, and provides buttons to open `app/main.py`, open the `app` folder, and run the application.
+
+If you still want the editable package workflow, `setup.py` is available:
+
+```bash
 pip install -e .
 vision-tracker
 ```
