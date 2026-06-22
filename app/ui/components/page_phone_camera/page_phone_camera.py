@@ -416,6 +416,10 @@ class PhoneCameraPage(SiPage):
         self.btn_load_model = self._mkButton("Load", 112)
         self.btn_load_model.clicked.connect(self._loadSelectedModel)
         row.addWidget(self.btn_load_model, side="left")
+        self.btn_unload_model = self._mkButton("Unload", 112)
+        self.btn_unload_model.clicked.connect(self._unloadSelectedModel)
+        self.btn_unload_model.setEnabled(False)
+        row.addWidget(self.btn_unload_model, side="left")
         card.body().addWidget(row)
 
         conf_row = SiDenseHContainer(self)
@@ -723,6 +727,9 @@ class PhoneCameraPage(SiPage):
         if idx < 0 or idx >= len(self._found_models):
             self._onLog("No model available to load.", "WARN")
             return
+        # Drop any previously loaded model first to avoid holding two YOLO
+        # graphs (and TensorRT engines) in GPU memory at the same time.
+        self._releaseDetector(quiet=True)
         try:
             from core.detector import Detector, sync_class_config_from_model
             self._detector = Detector(self._found_models[idx])
@@ -736,11 +743,55 @@ class PhoneCameraPage(SiPage):
                     self._onLog(f"Class config synced from model: {synced}", "INFO")
             except Exception as sync_exc:
                 self._onLog(f"Class config sync skipped: {sync_exc}", "WARN")
+            self.btn_unload_model.setEnabled(True)
             self._onLog(f"Model loaded: {os.path.basename(self._found_models[idx])}", "SUCCESS")
         except Exception as exc:
             self._detector = None
             self._worker.set_detector(None)
+            self.btn_unload_model.setEnabled(False)
             self._onLog(f"Model load failed: {exc}", "ERROR")
+
+    def _unloadSelectedModel(self):
+        if self._detector is None:
+            self._onLog("No model is currently loaded.", "INFO")
+            return
+        self._releaseDetector(quiet=False)
+
+    def _releaseDetector(self, *, quiet: bool = False):
+        """Drop the YOLO detector and best-effort free GPU/CPU memory.
+
+        Worker uses the detector under a lock and copies the reference per
+        frame, so clearing it here is safe even while the stream is running —
+        subsequent frames will simply skip inference.
+        """
+        if self._detector is None:
+            return
+        try:
+            self._worker.set_detector(None)
+        except Exception:
+            pass
+        self._detector = None
+        for cb, _ in self._class_checkboxes:
+            cb.setChecked(False)
+        self._rebuildClassCheckboxes()
+        try:
+            self.btn_unload_model.setEnabled(False)
+        except Exception:
+            pass
+        try:
+            import gc
+            gc.collect()
+        except Exception:
+            pass
+        try:
+            import torch
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+                torch.cuda.ipc_collect()
+        except Exception:
+            pass
+        if not quiet:
+            self._onLog("Model unloaded; GPU/CPU memory released.", "SUCCESS")
 
     def _rebuildClassCheckboxes(self):
         for i in reversed(range(self.classes_layout.count())):
@@ -1274,6 +1325,10 @@ class PhoneCameraPage(SiPage):
         try:
             self._stopRecording()
             self._worker.stop()
+        except Exception:
+            pass
+        try:
+            self._releaseDetector(quiet=True)
         except Exception:
             pass
         super().closeEvent(event)

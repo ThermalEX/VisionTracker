@@ -51,6 +51,7 @@ class Config:
     CROSSHAIR_CENTER_DOT = True
     CROSSHAIR_DOT_SIZE = 2
     OVERLAY_OPACITY = 100
+    OVERLAY_FONT_SIZE = 14
 
     # Snap (teleport) settings
     SNAP_THRESHOLD = 40  # use snap when error > this (pixels)

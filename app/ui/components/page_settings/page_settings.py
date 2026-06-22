@@ -9,6 +9,7 @@ from PyQt5.QtWidgets import QHBoxLayout, QLabel, QPushButton, QSizePolicy, QWidg
 
 from siui.components import SiDenseHContainer, SiLabel, SiTitledWidgetGroup, SiOptionCardLinear
 from siui.components.page import SiPage
+from siui.components.slider.slider import SiSliderH
 from siui.components.widgets.button import SiSwitch
 from siui.components.widgets.label import SiSvgLabel
 from siui.core import Si, SiColor, SiGlobal
@@ -345,6 +346,19 @@ class SettingsPage(SiPage):
             "Display Kp and sensitivity values",
             "ic_fluent_settings_regular", "show_ctrl_params")
 
+        self.oi_font_size_card = SiOptionCardLinear(self)
+        self.oi_font_size_card.setTitle("Overlay Font Size", "Status text size on the overlay (px)")
+        self.oi_font_size_card.load(SiGlobal.siui.iconpack.get("ic_fluent_text_font_size_regular"))
+        self.oi_font_size = SiSliderH(self)
+        self.oi_font_size.setFixedSize(180, 24)
+        self.oi_font_size.setMinimum(8)
+        self.oi_font_size.setMaximum(48)
+        self.oi_font_size.setSingleStep(1)
+        self.oi_font_size.valueChanged.connect(
+            lambda value: self._onOverlayInfoChanged("overlay_font_size", int(value)))
+        self.oi_font_size_card.addWidget(self.oi_font_size)
+        self.titled_group.addWidget(self.oi_font_size_card)
+
         # === Advanced Features (at the bottom) ===
         self.titled_group.addTitle("Advanced Features")
 
@@ -611,6 +625,7 @@ class SettingsPage(SiPage):
     _OI_DEFAULTS = {
         "show_fps": True, "show_mode": True, "show_status": True,
         "show_target_info": True, "show_error_vector": True, "show_ctrl_params": False,
+        "overlay_font_size": 14,
     }
     _OI_SWITCHES = {}  # populated after __init__
 
@@ -630,6 +645,11 @@ class SettingsPage(SiPage):
             sw.blockSignals(True)
             sw.setChecked(oi.get(key, self._OI_DEFAULTS.get(key, True)))
             sw.blockSignals(False)
+
+        self.oi_font_size.blockSignals(True)
+        self.oi_font_size.setValue(int(oi.get("overlay_font_size",
+                                              self._OI_DEFAULTS["overlay_font_size"])))
+        self.oi_font_size.blockSignals(False)
 
     def _onOverlayInfoChanged(self, action: str, checked: bool):
         """Persist overlay display flag change and push to tracker in real-time."""

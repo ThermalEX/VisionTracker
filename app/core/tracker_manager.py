@@ -728,6 +728,7 @@ class TrackerWorker(QThread):
             "show_fps": True, "show_mode": True, "show_status": True,
             "show_target_info": True, "show_ctrl_params": False,
             "show_error_vector": True,
+            "overlay_font_size": Config.OVERLAY_FONT_SIZE,
         }
         try:
             app_dir = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))

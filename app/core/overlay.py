@@ -46,15 +46,17 @@ def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
                  show_status: bool = True, show_target_info: bool = True,
                  show_ctrl_params: bool = False,
                  error_x: float = 0, error_y: float = 0,
-                 show_error_vector: bool = True) -> np.ndarray:
+                 show_error_vector: bool = True,
+                 font_size: int = 14) -> np.ndarray:
     """Draw minimalist status overlay using YaHei font via PIL."""
     if not _PIL_AVAILABLE or font is None:
-        # Fallback: plain cv2 text
+        # Fallback: plain cv2 text — scale by font_size relative to 14px baseline
+        scale = max(0.3, font_size / 28.0)
         aim_col = (0, 255, 0) if aim_active else (0, 0, 255)
-        cv2.putText(overlay, f"{fps:.0f}fps  {mode}", (12, 22),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, (180, 180, 180), 1)
-        cv2.putText(overlay, f"AIM {'ON' if aim_active else 'OFF'}", (12, 44),
-                    cv2.FONT_HERSHEY_SIMPLEX, 0.55, aim_col, 1)
+        cv2.putText(overlay, f"{fps:.0f}fps  {mode}", (12, int(font_size * 1.6)),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, (180, 180, 180), 1)
+        cv2.putText(overlay, f"AIM {'ON' if aim_active else 'OFF'}", (12, int(font_size * 3.2)),
+                    cv2.FONT_HERSHEY_SIMPLEX, scale, aim_col, 1)
         return overlay
 
     # Convert BGR numpy → PIL RGB
@@ -62,7 +64,8 @@ def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
     draw = ImageDraw.Draw(pil_img)
 
     x, y = 12, 8
-    row_h = 22  # line height
+    row_h = max(font_size + 8, 16)  # line height scales with font
+    col_w = max(int(font_size * 5.5), 60)  # column width for row 1 (FPS/MODE)
 
     # Row 1: FPS  MODE
     if show_fps or show_mode:
@@ -75,17 +78,20 @@ def _draw_status(overlay: np.ndarray, fps: float, aim_active: bool,
         cx = x
         for text, col in row1_parts:
             draw.text((cx, y), text, font=font, fill=col)
-            cx += 80
+            cx += col_w
         y += row_h
 
-    # Row 2: AIM●   FIRE●
+    # Row 2: AIM●   FIRE●  (column offsets scale with font size)
     if show_status:
         aim_dot = (100, 255, 100) if aim_active else (255, 70, 70)
         fire_dot = (100, 255, 100) if auto_fire else (110, 110, 110)
+        ox_aim_dot = int(font_size * 2.4)
+        ox_fire = int(font_size * 4.0)
+        ox_fire_dot = int(font_size * 7.1)
         draw.text((x, y), "AIM", font=font, fill=(255, 255, 255))
-        draw.text((x + 34, y), "●", font=font, fill=aim_dot)
-        draw.text((x + 56, y), "FIRE", font=font, fill=(255, 255, 255))
-        draw.text((x + 100, y), "●", font=font, fill=fire_dot)
+        draw.text((x + ox_aim_dot, y), "●", font=font, fill=aim_dot)
+        draw.text((x + ox_fire, y), "FIRE", font=font, fill=(255, 255, 255))
+        draw.text((x + ox_fire_dot, y), "●", font=font, fill=fire_dot)
         y += row_h
 
     # Row 3 (only when target locked): conf + dist
@@ -151,10 +157,6 @@ class OverlayProcess:
         window_name = "Overlay"
         cv2.namedWindow(window_name, cv2.WINDOW_NORMAL)
 
-        # Load fonts for status text (once per process)
-        _font = _load_yahei(14)
-        _font_s = _load_yahei(12)
-
         # Overlay display flags — initialized from startup, updated each frame from queue data
         _oi = dict(overlay_info or {})
         _show_fps          = _oi.get("show_fps",          True)
@@ -163,6 +165,21 @@ class OverlayProcess:
         _show_target_info  = _oi.get("show_target_info",  True)
         _show_ctrl_params  = _oi.get("show_ctrl_params",  False)
         _show_error_vector = _oi.get("show_error_vector", True)
+
+        # Font cache keyed by size — overlay font size is configurable at runtime.
+        _font_cache: dict = {}
+
+        def _get_font(size: int):
+            size = max(8, min(int(size), 64))
+            f = _font_cache.get(size)
+            if f is None:
+                f = _load_yahei(size)
+                _font_cache[size] = f
+            return f
+
+        _font_size = int(_oi.get("overlay_font_size", Config.OVERLAY_FONT_SIZE))
+        _font = _get_font(_font_size)
+        _font_s = _get_font(max(8, _font_size - 2))
 
         # Create dummy window first
         dummy = np.zeros((win_h, win_w, 3), dtype=np.uint8)
@@ -333,6 +350,14 @@ class OverlayProcess:
                 _show_ctrl_params  = _oi.get("show_ctrl_params",  False)
                 _show_error_vector = _oi.get("show_error_vector", True)
 
+            # Reload fonts when overlay_font_size changes at runtime
+            # (carried inside overlay_info, alongside the show_* flags).
+            new_font_size = int(_oi.get('overlay_font_size', _font_size))
+            if new_font_size != _font_size and new_font_size > 0:
+                _font_size = new_font_size
+                _font = _get_font(_font_size)
+                _font_s = _get_font(max(8, _font_size - 2))
+
             # Draw minimalist status text (YaHei font via PIL)
             kp      = data.get('kp',      0.0)
             sens    = data.get('sens',    0.0)
@@ -345,7 +370,8 @@ class OverlayProcess:
                                    show_target_info=_show_target_info,
                                    show_ctrl_params=_show_ctrl_params,
                                    error_x=error_x, error_y=error_y,
-                                   show_error_vector=_show_error_vector)
+                                   show_error_vector=_show_error_vector,
+                                   font_size=_font_size)
 
             # Re-assert topmost every frame so full-screen apps can't bury the overlay
             if hwnd:

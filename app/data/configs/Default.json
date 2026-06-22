@@ -1,6 +1,6 @@
 {
   "model_path": "g:\\Project\\HonoursStageProject\\app\\models\\best 12.23_200.engine",
-  "operation_mode": "auto_aim",
+  "operation_mode": "auto_aim_fire",
   "aim_part": "head",
   "fov_width": 200,
   "fov_height": 200,
@@ -21,8 +21,8 @@
   "click_radius_min": 1,
   "click_radius_max": 40,
   "target_priority": "nearest",
-  "snap_threshold": 0,
-  "snap_sensitivity": 1.0,
+  "snap_threshold": 40,
+  "snap_sensitivity": 2.26,
   "snap_cooldown": 0.2,
   "snap_update_threshold": 10,
   "controller_type": "pid",

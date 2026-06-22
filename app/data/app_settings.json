@@ -6,7 +6,8 @@
     "show_mode": true,
     "show_status": true,
     "show_target_info": true,
-    "show_error_vector": true
+    "show_error_vector": true,
+    "overlay_font_size": 35
   },
   "hotkeys": {
     "lineup_switch": "f7",
