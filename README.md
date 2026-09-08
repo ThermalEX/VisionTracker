@@ -7,6 +7,7 @@
 ![License](https://img.shields.io/badge/License-Academic-orange)
 
 Real-time object detection and tracking desktop application for academic research in computer vision.
+This is my graduation project of University of Hull :)
 
 ![Code Growth](docs/loc_chart.png)
 
